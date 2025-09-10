@@ -1,0 +1,43 @@
+{
+  "extensionName": { "message": "PixelGuard" },
+  "extensionDescription": { "message": "Detecta y bloquea píxeles de seguimiento en los correos de Thunderbird." },
+
+  "ui_blockMode": { "message": "Modo bloqueo" },
+  "ui_detectedTotal": { "message": "Detectados (total):" },
+  "ui_blockedTotal": { "message": "Bloqueados (total):" },
+  "ui_openOptions": { "message": "Abrir opciones" },
+  "ui_buyCoffee": { "message": "Invítame a un café" },
+
+  "state_on": { "message": "ENCENDIDO" },
+  "state_off": { "message": "APAGADO" },
+
+  "banner_ariaLabel": { "message": "Aviso de seguimiento de PixelGuard" },
+  "banner_detected": {
+    "message": "Se han detectado $COUNT$ posible(s) píxel(es) de seguimiento en este correo.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "banner_allowDomain": {
+    "message": "Permitir dominio $DOMAIN$",
+    "placeholders": { "domain": { "content": "$1" } }
+  },
+  "unknownDomain": { "message": "desconocido" },
+  "banner_toggleBlock": { "message": "Activar/Desactivar bloqueo" },
+  "banner_blockActive": { "message": "Bloqueo ACTIVO" },
+  "banner_blockInactive": { "message": "Bloqueo INACTIVO" },
+  "banner_moreInfo": { "message": "Más info / Opciones" },
+
+  "options_title": { "message": "PixelGuard — Opciones" },
+  "options_whitelistTitle": { "message": "Lista blanca de dominios" },
+  "options_whitelistPlaceholder": { "message": "ej. ejemplo.com" },
+  "options_whitelistAdd": { "message": "Añadir" },
+  "options_remove": { "message": "Eliminar" },
+  "options_suspiciousHostsTitle": { "message": "Patrones de hosts sospechosos" },
+  "options_suspiciousHostsHint": { "message": "Se admite ** como comodín. Uno por línea." },
+  "options_saveHosts": { "message": "Guardar patrones" },
+  "options_exportImportTitle": { "message": "Exportar / Importar configuración" },
+  "options_export": { "message": "Exportar JSON" },
+  "options_importNote": { "message": "Nota: Importar sobrescribe la configuración actual." },
+  "options_supportTitle": { "message": "Apoya el proyecto" },
+  "options_supportText": { "message": "¿Te resulta útil PixelGuard? Puedes invitarme a un café:" },
+  "options_invalidJson": { "message": "JSON inválido:" }
+}

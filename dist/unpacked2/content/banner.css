@@ -1,0 +1,18 @@
+.pixelguard-banner { 
+  position: sticky; top: 0; z-index: 2147483647; 
+  background: #111; color: #fff; 
+  border: 1px solid #333; border-radius: 8px; 
+  padding: 10px 12px; margin: 8px 0; 
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+}
+.pixelguard-banner strong { color: #ffd166; }
+.pixelguard-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.pixelguard-btn { 
+  background: #222; color: #fff; border: 1px solid #444; 
+  padding: 6px 10px; border-radius: 6px; cursor: pointer; 
+}
+.pixelguard-btn.primary { background: #0b5; border-color: #0a4; }
+.pixelguard-btn.warn { background: #c00; border-color: #900; }
+.pixelguard-badge { display:inline-block; background:#c00; color:#fff; padding:2px 6px; border-radius:12px; margin-left:6px; font-weight:700; }
+

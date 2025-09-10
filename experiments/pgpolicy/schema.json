@@ -1,0 +1,43 @@
+[
+  {
+    "namespace": "pgPolicy",
+    "description": "PixelGuard native blocking policy",
+    "types": [
+      {
+        "id": "Rules",
+        "type": "object",
+        "properties": {
+          "blockMode": { "type": "boolean" },
+          "blockAllResources": { "type": "boolean" },
+          "blockAllExternals": { "type": "boolean" },
+          "blockStylesheets": { "type": "boolean" },
+          "blockFonts": { "type": "boolean" },
+          "blockMedia": { "type": "boolean" },
+          "blockXHR": { "type": "boolean" },
+          "blockPings": { "type": "boolean" },
+          "whitelist": { "type": "array", "items": { "type": "string" } },
+          "suspicious": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    ],
+    "functions": [
+      {
+        "name": "enable",
+        "type": "function",
+        "parameters": [ { "$ref": "Rules", "name": "rules" } ]
+      },
+      {
+        "name": "update",
+        "type": "function",
+        "parameters": [ { "$ref": "Rules", "name": "rules" } ]
+      },
+      {
+        "name": "disable",
+        "type": "function",
+        "parameters": []
+      }
+    ]
+  }
+]
+

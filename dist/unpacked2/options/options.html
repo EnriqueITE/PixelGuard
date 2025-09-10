@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PixelGuard — Options</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; margin: 16px; max-width: 800px; }
+      h2 { margin-top: 24px; }
+      .row { display:flex; gap:8px; align-items:center; }
+      input[type=text] { flex:1; padding:6px; }
+      button { padding:6px 10px; }
+      ul { list-style: none; padding: 0; }
+      li { display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #eee; }
+      textarea { width:100%; min-height: 120px; font-family: monospace; }
+      .danger { color:#b00; }
+    </style>
+  </head>
+  <body>
+    <h1 data-i18n="options_title">PixelGuard — Options</h1>
+
+    <section>
+      <h2 data-i18n="options_whitelistTitle">Whitelist domains</h2>
+      <div class="row">
+        <input type="text" id="whitelistInput" placeholder="e.g. example.com" data-i18n-placeholder="options_whitelistPlaceholder" />
+        <button id="addWhitelist" data-i18n="options_whitelistAdd">Add</button>
+      </div>
+      <ul id="whitelist"></ul>
+    </section>
+
+    <section>
+      <h2 data-i18n="options_suspiciousHostsTitle">Suspicious host patterns</h2>
+      <p data-i18n="options_suspiciousHostsHint">Supports ** as wildcard. One per line.</p>
+      <textarea id="hosts"></textarea>
+      <div><button id="saveHosts" data-i18n="options_saveHosts">Save patterns</button></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="options_exportImportTitle">Export / Import settings</h2>
+      <div class="row">
+        <button id="export" data-i18n="options_export">Export JSON</button>
+        <input type="file" id="importFile" accept="application/json" />
+      </div>
+      <p class="danger" data-i18n="options_importNote">Note: Importing overwrites current settings.</p>
+    </section>
+
+    <section>
+      <h2 data-i18n="options_supportTitle">Support the project</h2>
+      <p>
+        <span data-i18n="options_supportText">If PixelGuard is helpful, you can buy me a coffee:</span>
+        <a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer">buymeacoffee.com/enriqueite</a>
+      </p>
+    </section>
+
+    <script src="options.js"></script>
+  </body>
+  </html>
+

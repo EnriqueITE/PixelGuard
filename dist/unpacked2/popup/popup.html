@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PixelGuard</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; margin: 12px; }
+      .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+      button { padding:6px 10px; }
+      .stat { font-weight:700; }
+    </style>
+  </head>
+  <body>
+    <h3 data-i18n="extensionName">PixelGuard</h3>
+    <div class="row">
+      <span data-i18n="ui_blockMode">Blocking mode</span>
+      <button id="toggle"></button>
+    </div>
+    <div class="row"><span data-i18n="ui_detectedTotal">Detected (total):</span> <span class="stat" id="detected">0</span></div>
+    <div class="row"><span data-i18n="ui_blockedTotal">Blocked (total):</span> <span class="stat" id="blocked">0</span></div>
+    <div class="row"><button id="openOptions" data-i18n="ui_openOptions">Open Options</button></div>
+    <div class="row"><a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer" data-i18n="ui_buyCoffee">Buy me a coffee</a></div>
+    <script src="popup.js"></script>
+  </body>
+  </html>
+

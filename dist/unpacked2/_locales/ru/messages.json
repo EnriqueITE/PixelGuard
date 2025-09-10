@@ -1,0 +1,44 @@
+{
+  "extensionName": { "message": "PixelGuard" },
+  "extensionDescription": { "message": "Обнаруживает и блокирует пиксели отслеживания в письмах Thunderbird." },
+
+  "ui_blockMode": { "message": "Режим блокировки" },
+  "ui_detectedTotal": { "message": "Обнаружено (всего):" },
+  "ui_blockedTotal": { "message": "Заблокировано (всего):" },
+  "ui_openOptions": { "message": "Открыть настройки" },
+  "ui_buyCoffee": { "message": "Угостите меня кофе" },
+
+  "state_on": { "message": "ВКЛ" },
+  "state_off": { "message": "ВЫКЛ" },
+
+  "banner_ariaLabel": { "message": "Предупреждение отслеживания PixelGuard" },
+  "banner_detected": {
+    "message": "Обнаружено $COUNT$ возможных пикселей отслеживания в этом письме.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "banner_allowDomain": {
+    "message": "Разрешить домен $DOMAIN$",
+    "placeholders": { "domain": { "content": "$1" } }
+  },
+  "unknownDomain": { "message": "неизвестно" },
+  "banner_toggleBlock": { "message": "Включить/выключить блокировку" },
+  "banner_blockActive": { "message": "Блокировка АКТИВНА" },
+  "banner_blockInactive": { "message": "Блокировка ВЫКЛЮЧЕНА" },
+  "banner_moreInfo": { "message": "Подробнее / Настройки" },
+
+  "options_title": { "message": "PixelGuard — Настройки" },
+  "options_whitelistTitle": { "message": "Белый список доменов" },
+  "options_whitelistPlaceholder": { "message": "напр. example.com" },
+  "options_whitelistAdd": { "message": "Добавить" },
+  "options_remove": { "message": "Удалить" },
+  "options_suspiciousHostsTitle": { "message": "Подозрительные шаблоны хостов" },
+  "options_suspiciousHostsHint": { "message": "Поддерживает ** как подстановку. По одному в строке." },
+  "options_saveHosts": { "message": "Сохранить шаблоны" },
+  "options_exportImportTitle": { "message": "Экспорт / Импорт настроек" },
+  "options_export": { "message": "Экспорт JSON" },
+  "options_importNote": { "message": "Примечание: Импорт перезаписывает текущие настройки." },
+  "options_supportTitle": { "message": "Поддержать проект" },
+  "options_supportText": { "message": "Если PixelGuard полезен, вы можете угостить меня кофе:" },
+  "options_invalidJson": { "message": "Неверный JSON:" }
+}
+
