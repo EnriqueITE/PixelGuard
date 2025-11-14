@@ -174,42 +174,20 @@
     banner.className = "pixelguard-banner";
     banner.setAttribute("role", "region");
     banner.setAttribute("aria-label", t("banner_ariaLabel"));
-    // Theme-aware inline fallback to ensure it renders
-    let theme = 'alert';
-    try {
-      const st = await browser.runtime.sendMessage({ type: 'pg:getState' });
-      if (st && st.uiTheme === 'hacker') theme = 'hacker';
-    } catch (_) {}
-    if (theme === 'alert') {
-      banner.classList.add('alert');
-      banner.style.cssText = [
-        "position: sticky",
-        "top: 0",
-        "z-index: 2147483647",
-        "background: #ffeb3b",
-        "color: #111",
-        "border: 1px solid #d4c200",
-        "border-left: 4px solid #bfa200",
-        "border-radius: 0",
-        "padding: 10px 12px",
-        "margin: 0 0 8px 0",
-        "box-shadow: inset 0 -1px 0 rgba(0,0,0,0.2)"
-      ].join("; ");
-    } else {
-      banner.style.cssText = [
-        "position: sticky",
-        "top: 0",
-        "z-index: 2147483647",
-        "background: #0b0d0f",
-        "color: #e6f1ef",
-        "border: 1px solid #1f2a2f",
-        "border-left: 4px solid #00e676",
-        "border-radius: 8px",
-        "padding: 10px 12px",
-        "margin: 8px 0",
-        "box-shadow: 0 6px 18px rgba(0,0,0,0.35)"
-      ].join("; ");
-    }
+    // Hardcoded hacker theme
+    banner.style.cssText = [
+      "position: sticky",
+      "top: 0",
+      "z-index: 2147483647",
+      "background: #0b0d0f",
+      "color: #e6f1ef",
+      "border: 1px solid #1f2a2f",
+      "border-left: 4px solid #00e676",
+      "border-radius: 8px",
+      "padding: 10px 12px",
+      "margin: 8px 0",
+      "box-shadow: 0 6px 18px rgba(0,0,0,0.35)"
+    ].join("; ");
 
     const count = findings.suspicious.length;
     const header = document.createElement("div");
@@ -235,27 +213,10 @@
     const actions = document.createElement("div");
     actions.className = "pixelguard-actions";
 
-    const allowBtn = document.createElement("button");
-    allowBtn.className = "pixelguard-btn";
-    allowBtn.textContent = t("banner_allowDomain", currentDomain || t("unknownDomain"));
-    allowBtn.addEventListener("click", async () => {
-      if (!currentDomain) return;
-      await browser.runtime.sendMessage({ type: "pg:addWhitelist", domain: currentDomain });
-      removeBanner();
-    });
-
-    const blockToggle = document.createElement("button");
-    blockToggle.className = "pixelguard-btn warn";
-    blockToggle.textContent = t("banner_toggleBlock");
-    blockToggle.addEventListener("click", async () => {
-      const res = await browser.runtime.sendMessage({ type: "pg:toggleBlock" });
-      blockToggle.textContent = res.blockMode ? t("banner_blockActive") : t("banner_blockInactive");
-    });
-
     const moreBtn = document.createElement("button");
     moreBtn.className = "pixelguard-btn primary";
     // button inline fallbacks
-    [allowBtn, blockToggle, moreBtn].forEach((b) => {
+    [moreBtn].forEach((b) => {
       b.style.borderRadius = '6px';
       b.style.border = '1px solid #2b363c';
       b.style.padding = '6px 10px';
@@ -263,24 +224,12 @@
       b.style.color = '#e6f1ef';
       b.style.cursor = 'pointer';
     });
-    if (theme === 'alert') {
-      [allowBtn, moreBtn].forEach((b)=>{ b.style.background = '#fff8b0'; b.style.color='#111'; b.style.borderColor='#c7b500'; });
-      moreBtn.style.background = '#ffe15a';
-      blockToggle.style.background = '#f44336';
-      blockToggle.style.borderColor = '#b71c1c';
-      blockToggle.style.color = '#fff';
-    } else {
-      moreBtn.style.background = '#0c8';
-      moreBtn.style.borderColor = '#0b7';
-      moreBtn.style.color = '#082017';
-      blockToggle.style.background = '#e53935';
-      blockToggle.style.borderColor = '#b71c1c';
-    }
+    moreBtn.style.background = '#0c8';
+    moreBtn.style.borderColor = '#0b7';
+    moreBtn.style.color = '#082017';
     moreBtn.textContent = t("banner_moreInfo");
     moreBtn.addEventListener("click", () => API.runtime.openOptionsPage());
 
-    actions.appendChild(allowBtn);
-    actions.appendChild(blockToggle);
     actions.appendChild(moreBtn);
 
     // External images section (collapsible)
@@ -362,15 +311,9 @@
   }
 
   const doScan = throttle(async () => {
-    // skip scanning if current sender domain is whitelisted
     const st = await (API?.runtime?.sendMessage ? API.runtime.sendMessage({ type: "pg:getState" }) : Promise.resolve({}));
     const debug = !!st?.debug;
     if (debug) console.log('[PG/cs] scanning...');
-    if (st?.whitelist?.includes((currentDomain || "").toLowerCase())) {
-      if (debug) console.log('[PG/cs] domain whitelisted, removing banner');
-      removeBanner();
-      return;
-    }
     const findings = scan(document);
     if (debug) console.log('[PG/cs] results', findings);
     if (findings.suspicious.length > 0 || findings.externals.length > 0 || findings.links.length > 0 || debug) await renderBanner(findings); else removeBanner();

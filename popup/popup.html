@@ -9,7 +9,6 @@
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; margin: 12px; }
       h3 { margin: 0 0 10px; color:#7df9b9; letter-spacing:.2px; }
       .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; flex-wrap: nowrap; }
-      .row-compact { justify-content:flex-start; }
       .panel { background: var(--panel); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px; padding:10px; }
       .muted { color: var(--muted); }
       .stat { font-weight:700; }
@@ -30,20 +29,6 @@
   </head>
   <body>
     <div class="panel">
-      <h3 data-i18n="extensionName">PixelGuard</h3>
-      <div class="row">
-        <span class="muted" data-i18n="ui_blockMode">Blocking mode</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button id="toggle"></button>
-          <span id="blockedBadge" class="badge-sm" style="display:none;" title="Blocked (total)">0</span>
-        </div>
-      </div>
-      <div class="row" id="rowTotalDetected"><span><span class="muted" data-i18n="ui_detectedTotal">Detected (total):</span><span class="muted muted-note" data-i18n="ui_sinceInstall">since installation</span></span> <span class="stat" id="detected">0</span></div>
-      <div class="row" id="rowTotalBlocked"><span><span class="muted" data-i18n="ui_blockedTotal">Blocked (total):</span><span class="muted muted-note" data-i18n="ui_sinceInstall">since installation</span></span> <span class="stat" id="blocked">0</span></div>
-      <!-- Global section only: totals and toggle. Per-message chips moved below. -->
-      <div class="row"><button id="openOptions" data-i18n="ui_openOptions">Open Options</button></div>
-    </div>
-    <div class="panel">
       <h3 data-i18n="popup_thisMessage">This message</h3>
       <div class="row">
         <span class="muted" data-i18n="popup_summary">Summary</span>
@@ -56,14 +41,11 @@
       <div class="row">
         <span class="muted" data-i18n="popup_senderDomain">Sender domain</span>
         <span id="senderDomain" class="stat">-</span>
-        <button id="toggleWL" data-i18n="popup_whitelistAdd">Whitelist</button>
       </div>
       <!-- Detailed rows hidden to reduce repetition; summary pills above show counts -->
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_suspiciousPixels">Suspicious pixels</span><span class="stat" id="suspCount">0</span></div>
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_externalImages">External images</span><span class="stat" id="extCount">0</span></div>
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_trackingLinks">Tracking links</span><span class="stat" id="linkCount">0</span></div>
-      <div class="row"><span class="muted" data-i18n="popup_scannedAt">Scanned at</span><span id="scanTs">-</span></div>
-      <div class="row row-compact"><button id="rescan" data-i18n="popup_rescan">Rescan now</button><span id="scanStatus" class="muted" style="margin-left:8px;"></span></div>
       <div style="margin-top:8px">
         <details id="detailsList">
           <summary data-i18n="popup_showDetails">Show details</summary>
@@ -71,8 +53,9 @@
         </details>
       </div>
     </div>
-    <div class="muted" style="font-size:12px; text-align:center; margin-top:8px;">
+    <div class="muted" style="font-size:12px; text-align:center; margin-top:8px; display:flex; justify-content:center; gap:16px;">
       <a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer" data-i18n="ui_buyCoffee">Buy me a coffee</a>
+      <a href="#" id="openOptions" data-i18n="ui_openOptions">Settings</a>
     </div>
     <script src="popup.js"></script>
   </body>

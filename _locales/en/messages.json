@@ -5,7 +5,7 @@
   "ui_blockMode": { "message": "Blocking mode" },
   "ui_detectedTotal": { "message": "Detected (total):" },
   "ui_blockedTotal": { "message": "Blocked (total):" },
-  "ui_openOptions": { "message": "Open Options" },
+  "ui_openOptions": { "message": "Settings" },
   "ui_buyCoffee": { "message": "Buy me a coffee" },
   "popup_thisMessage": { "message": "This message" },
   "popup_senderDomain": { "message": "Sender domain" },
@@ -48,7 +48,7 @@
   "banner_trackingLinksTitle": { "message": "Tracking links detected" },
   "banner_dismiss": { "message": "Dismiss" },
 
-  "options_title": { "message": "PixelGuard — Options" },
+  "options_title": { "message": "Settings" },
   "options_whitelistTitle": { "message": "Whitelist domains" },
   "options_whitelistPlaceholder": { "message": "e.g. example.com" },
   "options_whitelistAdd": { "message": "Add" },

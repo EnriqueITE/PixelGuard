@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "homepage_url": "https://github.com/EnriqueITE/Pixel-Guard",
   "author": "Enrique Serrano Aparicio",
   "default_locale": "en",
@@ -13,39 +13,34 @@
     }
   },
   "permissions": [
-    "experiments",
     "messagesRead",
     "tabs",
-    "storage",
-    "webRequest",
-    "webRequestBlocking",
-    "<all_urls>"
+    "storage"
   ],
   "background": {
     "scripts": ["background.js"]
   },
+  "icons": {
+    "48": "assets/icon-48.png",
+    "96": "assets/icon-96.png"
+  },
   "browser_action": {
     "default_title": "__MSG_extensionName__",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "assets/icon-48.png"
+    }
   },
   "message_display_action": {
     "default_title": "__MSG_extensionName__",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "assets/icon-48.png"
+    }
   },
   "options_ui": {
     "page": "options/options.html",
     "browser_style": true,
     "open_in_tab": true
-  },
-  "experiment_apis": {
-    "pgPolicy": {
-      "schema": "experiments/pgpolicy/schema.json",
-      "parent": {
-        "scopes": ["addon_parent"],
-        "paths": [["pgPolicy"]],
-        "script": "experiments/pgpolicy/parent.js",
-        "events": ["startup"]
-      }
-    }
   }
 }

@@ -33,6 +33,7 @@ New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 $include = @(
   'manifest.json',
   'background.js',
+  'assets',
   'content',
   'options',
   'popup',

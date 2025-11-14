@@ -1,7 +1,6 @@
 /* global ExtensionAPI */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const Ci = Components.interfaces;
 const Cr = Components.results;
 

@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>PixelGuard — Options</title>
+    <title>Settings</title>
     <style>
       :root { --bg:#0b0d0f; --fg:#e6f1ef; --muted:#b5c9c3; --accent:#00e676; --danger:#e53935; --panel:#121517; --border:#2b363c; }
       html, body { background: var(--bg); color: var(--fg); }
@@ -10,6 +10,7 @@
       h1 { color:#7df9b9; letter-spacing:.2px; }
       h2 { margin-top: 24px; color:#7df9b9; }
       .panel { background: var(--panel); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px; padding:14px; margin-bottom:16px; }
+      .hero-logo { height:64px; width:auto; display:block; }
       .row { display:flex; gap:8px; align-items:center; }
       input[type=text], textarea { flex:1; padding:8px 10px; background:#0f1316; color:var(--fg); border:1px solid var(--border); border-radius:6px; }
       button { padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:#1a1f23; color:var(--fg); cursor:pointer; }
@@ -22,43 +23,14 @@
     </style>
   </head>
   <body>
-    <h1 data-i18n="options_title">PixelGuard — Options</h1>
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+      <img src="../assets/logo-hero.png" alt="PixelGuard Logo" class="hero-logo" />
+      <h1 data-i18n="options_title">Settings</h1>
+    </div>
 
-    <section class="panel">
-      <h2 data-i18n="options_whitelistTitle">Whitelist domains</h2>
-      <div class="row">
-        <input type="text" id="whitelistInput" placeholder="e.g. example.com" data-i18n-placeholder="options_whitelistPlaceholder" />
-        <button id="addWhitelist" data-i18n="options_whitelistAdd">Add</button>
-      </div>
-      <ul id="whitelist"></ul>
-    </section>
 
-    <section class="panel">
-      <h2 data-i18n="options_suspiciousHostsTitle">Suspicious host patterns</h2>
-      <p class="muted" data-i18n="options_suspiciousHostsHint">Supports ** as wildcard. One per line.</p>
-      <textarea id="hosts"></textarea>
-      <div style="margin-top:8px"><button id="saveHosts" data-i18n="options_saveHosts">Save patterns</button></div>
-    </section>
 
-    <section class="panel">
-      <h2 data-i18n="options_appearanceTitle">Appearance</h2>
-      <div class="row">
-        <label for="themeSelect" class="muted" data-i18n="options_bannerStyle">Banner style</label>
-        <select id="themeSelect" style="flex:1; padding:8px 10px; background:#0f1316; color:var(--fg); border:1px solid var(--border); border-radius:6px;">
-          <option value="alert" data-i18n="options_style_alert">Alert (yellow)</option>
-          <option value="hacker" data-i18n="options_style_hacker">Hacker (dark)</option>
-        </select>
-      </div>
-    </section>
 
-    <section class="panel">
-      <h2 data-i18n="options_exportImportTitle">Export / Import settings</h2>
-      <div class="row">
-        <button id="export" data-i18n="options_export">Export JSON</button>
-        <input type="file" id="importFile" accept="application/json" />
-      </div>
-      <p class="danger" data-i18n="options_importNote">Note: Importing overwrites current settings.</p>
-    </section>
 
     <section class="panel">
       <h2 data-i18n="options_supportTitle">Support the project</h2>
@@ -68,37 +40,7 @@
       </p>
     </section>
 
-    <section class="panel">
-      <h2 data-i18n="options_advancedTitle">Advanced</h2>
-      <div class="row">
-        <label for="blockAllResourcesToggle" class="muted" data-i18n="options_blockAllResources">Block all external resources (master switch)</label>
-        <input type="checkbox" id="blockAllResourcesToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockAllImagesToggle" class="muted" data-i18n="options_blockAllImages">Block all external images (when blocking is ON)</label>
-        <input type="checkbox" id="blockAllImagesToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockStylesToggle" class="muted" data-i18n="options_blockStylesheets">Block external stylesheets</label>
-        <input type="checkbox" id="blockStylesToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockFontsToggle" class="muted" data-i18n="options_blockFonts">Block external fonts</label>
-        <input type="checkbox" id="blockFontsToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockMediaToggle" class="muted" data-i18n="options_blockMedia">Block media/objects</label>
-        <input type="checkbox" id="blockMediaToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockXHRToggle" class="muted" data-i18n="options_blockXHR">Block XHR/Fetch</label>
-        <input type="checkbox" id="blockXHRToggle" />
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label for="blockPingsToggle" class="muted" data-i18n="options_blockPings">Block pings/beacons</label>
-        <input type="checkbox" id="blockPingsToggle" />
-      </div>
-    </section>
+
 
     <section class="panel">
       <h2 data-i18n="options_debugTitle">Debug</h2>
