@@ -126,7 +126,7 @@
     });
   } catch (_) {}
 
-  browser.messageDisplay.onMessageDisplayed.addListener(async (tab, message) => {
+  const handleMessageDisplayed = async (tab, message) => {
     const domain = parseDomainFromEmail(message.author || "");
     state.currentSenderDomainByTab.set(tab.id, domain);
     setBadge("");
@@ -163,7 +163,13 @@
     } catch (e) {
       if (state.settings?.debug) console.log("[PG/bg] background scan error:", String(e));
     }
-  });
+  };
+
+  if (browser.messageDisplay?.onMessageDisplayed?.addListener) {
+    browser.messageDisplay.onMessageDisplayed.addListener(handleMessageDisplayed);
+  } else {
+    console.warn("[PG/bg] messageDisplay API unavailable; real-time message detection disabled.");
+  }
 
   browser.runtime.onMessage.addListener(async (msg, sender) => {
     switch (msg?.type) {
@@ -189,6 +195,10 @@
         return entry || { findings: { suspicious: [], externals: [], links: [] }, ts: 0, domain: state.currentSenderDomainByTab.get(tabId || -1) || "" };
       }
       case "pg:rescanNow": {
+        if (!browser.messageDisplay?.getDisplayedMessage) {
+          if (state.settings?.debug) console.log("[PG/bg] rescan skipped: messageDisplay.getDisplayedMessage unavailable");
+          return { ok: false, error: "messageDisplay.getDisplayedMessage unsupported" };
+        }
         try {
           let tabId = sender?.tab?.id;
           if (tabId == null) {
@@ -254,6 +264,9 @@
   });
 
   async function getMessageHtml(message) {
+    if (!browser.messages?.getFull) {
+      throw new Error("messages.getFull unsupported in this build");
+    }
     const full = await browser.messages.getFull(message.id);
     function findHtml(part) {
       if (!part) return null;

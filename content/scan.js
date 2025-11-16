@@ -199,7 +199,10 @@
     icon.textContent = '🛡️';
     const title = document.createElement("div");
     const name = t("extensionName");
-    title.innerHTML = `<strong>${name}</strong>: ${t("banner_detected", String(count))}`;
+    const strongName = document.createElement("strong");
+    strongName.textContent = name;
+    title.appendChild(strongName);
+    title.appendChild(document.createTextNode(`: ${t("banner_detected", String(count))}`));
     left.appendChild(icon);
     left.appendChild(title);
     const closeBtn = document.createElement('button');
@@ -240,7 +243,15 @@
       const details = document.createElement("details");
       details.className = "pixelguard-details";
       const summary = document.createElement("summary");
-      summary.innerHTML = `<span class="pg-accent">${t("banner_externalImagesTitle")}</span> <span class="pg-badge">${extCount}</span>`;
+      const extTitle = document.createElement("span");
+      extTitle.className = "pg-accent";
+      extTitle.textContent = t("banner_externalImagesTitle");
+      const extBadge = document.createElement("span");
+      extBadge.className = "pg-badge";
+      extBadge.textContent = String(extCount);
+      summary.appendChild(extTitle);
+      summary.appendChild(document.createTextNode(" "));
+      summary.appendChild(extBadge);
 
       const list = document.createElement("ul");
       list.className = "pixelguard-list";
@@ -270,7 +281,15 @@
       const details = document.createElement('details');
       details.className = 'pixelguard-details';
       const summary = document.createElement('summary');
-      summary.innerHTML = `<span class="pg-accent">${t('banner_trackingLinksTitle')}</span> <span class=\"pg-badge\">${linkCount}</span>`;
+      const linksTitle = document.createElement('span');
+      linksTitle.className = 'pg-accent';
+      linksTitle.textContent = t('banner_trackingLinksTitle');
+      const linksBadge = document.createElement('span');
+      linksBadge.className = 'pg-badge';
+      linksBadge.textContent = String(linkCount);
+      summary.appendChild(linksTitle);
+      summary.appendChild(document.createTextNode(' '));
+      summary.appendChild(linksBadge);
       const list = document.createElement('ul');
       list.className = 'pixelguard-list';
       for (const it of findings.links.slice(0, 20)) {
