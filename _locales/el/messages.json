@@ -1,6 +1,6 @@
 {
   "extensionName": { "message": "PixelGuard" },
-  "extensionDescription": { "message": "Detect and block tracking pixels in Thunderbird emails." },
+  "extensionDescription": { "message": "Εντοπίζει pixel παρακολούθησης, συνδέσμους tracking και εξωτερικές εικόνες στα email του Thunderbird." },
 
   "ui_blockMode": { "message": "Blocking mode" },
   "ui_detectedTotal": { "message": "Detected (total):" },
