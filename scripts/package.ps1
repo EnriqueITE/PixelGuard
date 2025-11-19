@@ -38,8 +38,7 @@ $include = @(
   'options',
   'popup',
   '_locales',
-  'icons',
-  'experiments'
+  'icons'
 )
 
 # Copy included items if they exist

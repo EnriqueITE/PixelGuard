@@ -1,26 +1,27 @@
 # PixelGuard (Thunderbird)
 
-PixelGuard is a Thunderbird extension that detects tracking pixels, links, and external images whenever you open an email, helping you see which messages try to track you before you load remote content.
+PixelGuard is a Thunderbird extension that **reports** suspected tracking pixels, links, and external images when you open an email. It highlights suspicious items so you can decide whether to load remote content, and PixelGuard never interferes with Thunderbird's network behavior.
 
 ## Installation
-- Download the stable, signed build directly from the official Thunderbird Add-on store (search for “PixelGuard”) to ensure you always get the vetted release.
-- For contributors who want to test unreleased changes, compile the add-on from this repository and load it temporarily in Thunderbird.
+- Install the signed build from the official Thunderbird Add-on store (search for "PixelGuard") to ensure you receive the reviewed release.
+- Contributors can clone this repository, build from source, and load the extension temporarily in Thunderbird for testing.
 
 ## What It Does
 - Scans the displayed message HTML to spot 1x1/hidden images, suspicious tracking parameters, and externally hosted assets that typically leak engagement.
 - Surfaces detections in a compact banner with quick actions such as allowing a sender/domain or opening the options panel.
 - Keeps a per-sender whitelist so you can silence warnings from trusted contacts while still flagging others.
+- Provides transparency only; remote content, images, fonts, and requests remain fully governed by Thunderbird's built-in remote-content controls.
 
-Note: Thunderbird blocks remote content by default until you allow it. PixelGuard focuses on detection and transparency so you can make informed decisions before loading anything external.
+If you need enforcement, rely on Thunderbird's controls (Message > Enable/Disable Remote Content) or another dedicated tool. PixelGuard focuses purely on detection so you can make informed decisions before loading anything external.
 
 ## Permissions
-- `messagesRead`, `messageDisplay`: read message context.
-- `storage`: persist detection preferences.
+- `messagesRead`, `messageDisplay`: read the currently displayed message context for analysis.
+- `storage`: persist detection preferences and whitelists locally.
 
 ## Development Installation
 1. Clone this repository and open the project folder.
-2. In Thunderbird, go to Tools → Add-ons and Themes → ⚙ → Debug Add-ons.
-3. Load Temporary Add-on and select `manifest.json`.
+2. In Thunderbird, go to Tools > Add-ons and Themes > Debug Add-ons.
+3. Click "Load Temporary Add-on" and pick `manifest.json` from this project.
 4. Open an HTML email to see the PixelGuard banner with live detections.
 
 ## Localization
@@ -32,7 +33,7 @@ Note: Thunderbird blocks remote content by default until you allow it. PixelGuar
 
 ## Packaging
 - Include icons in `icons/` (16, 32, 48, 96, 128).
-- Compile the add-on locally with the helper script:
+- Run the helper script to create an `.xpi`:
   - `powershell -ExecutionPolicy Bypass -File scripts/package.ps1`
   - Output: `dist/PixelGuard-<version>.xpi`
   - The script reads the version from `manifest.json` and zips the staged files.

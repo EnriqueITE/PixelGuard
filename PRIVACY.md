@@ -1,7 +1,7 @@
 # PixelGuard Privacy Notice
 
 ## Summary
-- PixelGuard only scans the HTML of messages you open locally in Thunderbird to flag tracking pixels, links, and external images. No telemetry or account data is collected.
+- PixelGuard only scans the HTML of messages you open locally in Thunderbird to flag tracking pixels, links, and external images. It never interferes with remote requests or transmits message data elsewhere, and no telemetry or account data is collected.
 - Settings such as whitelist entries, UI theme, and detection counters are saved using `browser.storage.local`; they never leave your device unless you enable Thunderbird Sync.
 
 ## Data PixelGuard Processes

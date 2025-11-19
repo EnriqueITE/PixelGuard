@@ -2,9 +2,7 @@
   "extensionName": { "message": "PixelGuard" },
   "extensionDescription": { "message": "Detecta píxeles de seguimiento, enlaces rastreadores e imágenes externas en correos de Thunderbird." },
 
-  "ui_blockMode": { "message": "Blocking mode" },
   "ui_detectedTotal": { "message": "Detected (total):" },
-  "ui_blockedTotal": { "message": "Blocked (total):" },
   "ui_openOptions": { "message": "Settings" },
   "ui_buyCoffee": { "message": "Buy me a coffee" },
   "popup_thisMessage": { "message": "This message" },
@@ -40,9 +38,6 @@
     "placeholders": { "domain": { "content": "$1" } }
   },
   "unknownDomain": { "message": "unknown" },
-  "banner_toggleBlock": { "message": "Toggle blocking" },
-  "banner_blockActive": { "message": "Blocking ACTIVE" },
-  "banner_blockInactive": { "message": "Blocking INACTIVE" },
   "banner_moreInfo": { "message": "More info / Options" },
   "banner_externalImagesTitle": { "message": "External images loaded" },
   "banner_trackingLinksTitle": { "message": "Tracking links detected" },
@@ -70,13 +65,6 @@
   "options_debugMode": { "message": "Debug mode" },
   "options_debugTitle": { "message": "Debug" },
   "options_debugEnable": { "message": "Enable debug mode" },
-  "options_blockAllImages": { "message": "Block all external images (when blocking is ON)" },
-  "options_blockStylesheets": { "message": "Block external stylesheets" },
-  "options_blockFonts": { "message": "Block external fonts" },
-  "options_blockMedia": { "message": "Block media/objects" },
-  "options_blockXHR": { "message": "Block XHR/Fetch" },
-  "options_blockPings": { "message": "Block pings/beacons" },
-  "options_blockAllResources": { "message": "Block all external resources (master switch)" },
   "ui_sinceInstall": { "message": "since installation" }
 }
 
