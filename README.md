@@ -44,4 +44,4 @@ If you need enforcement, rely on Thunderbird's controls (Message > Enable/Disabl
 - Automated tests (Jest/Vitest with jsdom).
 
 ## License
-Licensed under the project's repository license. Update the license file in your repository with the correct project details and remove any placeholders.
+PixelGuard is free software licensed under the GNU General Public License v3.0 or later. See [LICENSE](LICENSE) for the standard GPL terms and [NOTICE](NOTICE) for the project copyright notice.
