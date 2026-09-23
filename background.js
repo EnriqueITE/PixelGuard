@@ -36,7 +36,7 @@
     try {
       if (browser.messageDisplayScripts?.register) {
         await browser.messageDisplayScripts.register({
-          js: [{ file: "content/scan.js" }],
+          js: [{ file: "content/scanner.js" }, { file: "content/scan.js" }],
           css: [{ file: "content/banner.css" }],
           runAt: "document_end",
           allFrames: true,
@@ -151,7 +151,7 @@
     try {
       if (state.settings?.debug) console.log("[PG/bg] scanning message in background for tab", tab.id);
       const html = await getMessageHtml(message);
-      const findings = scanHtml(html);
+      const findings = scanHtml(html, domain);
       state.findingsByTab.set(tab.id, { findings, ts: Date.now(), domain });
       if (state.settings?.debug) console.log("[PG/bg] findings:", findings);
       await setBadgeForFindings(tab.id, findings);
@@ -171,7 +171,7 @@
     console.warn("[PG/bg] messageDisplay API unavailable; real-time message detection disabled.");
   }
 
-  browser.runtime.onMessage.addListener(async (msg, sender) => {
+  async function handleRuntimeMessage(msg, sender) {
     switch (msg?.type) {
       case "pg:getState": {
         if (state.settings?.debug) console.log("[PG/bg] getState from", sender?.tab?.id);
@@ -209,8 +209,8 @@
           const displayed = await browser.messageDisplay.getDisplayedMessage(tabId);
           if (!displayed) return { ok: false };
           const html = await getMessageHtml(displayed);
-          const findings = scanHtml(html);
           const domain = state.currentSenderDomainByTab.get(tabId) || "";
+          const findings = scanHtml(html, domain);
           state.findingsByTab.set(tabId, { findings, ts: Date.now(), domain });
           await setBadgeForFindings(tabId, findings);
           const n = Number(findings?.suspicious?.length || 0);
@@ -230,7 +230,6 @@
         return { ok: true, debug: state.settings.debug };
       }
       case "pg:export": {
-        // Filter out non-essential keys for export
         const { uiTheme, debug, counters } = state.settings;
         return { uiTheme, debug, counters };
       }
@@ -252,8 +251,8 @@
       case "pg:detectedCount": {
         const n = Number(msg.count || 0);
         if (n > 0) {
-            state.settings.counters.totalDetected += n;
-            await saveSettings();
+          state.settings.counters.totalDetected += n;
+          await saveSettings();
         }
         await setBadge(n > 0 ? String(n) : "");
         return { ok: true };
@@ -261,6 +260,16 @@
       default:
         return {};
     }
+  }
+
+  browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    handleRuntimeMessage(msg, sender)
+      .then(response => sendResponse(response))
+      .catch(e => {
+        if (state.settings?.debug) console.log("[PG/bg] runtime message error:", String(e));
+        sendResponse({ ok: false, error: String(e) });
+      });
+    return true;
   });
 
   async function getMessageHtml(message) {
@@ -282,81 +291,10 @@
     return findHtml(full) || "";
   }
 
-  function scanHtml(html) {
-    const res = { suspicious: [], externals: [], links: [] };
-    if (!html) return res;
-    let doc;
-    try {
-      const parser = new DOMParser();
-      doc = parser.parseFromString(html, 'text/html');
-    } catch (e) {
-      return res;
+  function scanHtml(html, senderDomain) {
+    if (!globalThis.PixelGuardScanner?.scanHtml) {
+      return { suspicious: [], externals: [], links: [] };
     }
-
-    const tryURL = (u) => { try { return new URL(u); } catch (_) { return null; } };
-    const hasSuspiciousParams = (u) => {
-      if (!u) return false;
-      const keys = ["uid","token","open","track","pixel","beacon","campaign_id","recipient","subscriber","message_id","signature","rid","cid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","gclid","fbclid","msclkid","clickid","trace","tracelog"];
-      return keys.some(k => u.searchParams.has(k));
-    };
-    const isRemote = (s) => /^https?:\/\//i.test(s || "");
-
-    doc.querySelectorAll('img').forEach(img => {
-      const src = img.getAttribute('src') || '';
-      if (isRemote(src)) {
-        const u = tryURL(src);
-        const tinyAttr = ['width','height','style'].some(k => (img.getAttribute(k)||'').toString().includes('1px') || (img.getAttribute(k)||'').toString().includes('2px'));
-        const hidden = (img.getAttribute('style')||'').match(/display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0/i);
-        const susp = tinyAttr || hidden || (u && (hasSuspiciousParams(u) || /\b(pixel|beacon|track|open)\b/i.test(u.pathname)));
-        if (susp) res.suspicious.push({ url: src, reason: tinyAttr? 'tiny/hidden': 'url' }); else res.externals.push({ url: src, host: u?.hostname||'' });
-      }
-      const srcset = img.getAttribute('srcset') || '';
-      if (srcset) srcset.split(',').forEach(p => {
-        const cand = (p.trim().split(/\s+/)[0]||'').trim();
-        if (!isRemote(cand)) return;
-        const u = tryURL(cand);
-        const susp = u && (hasSuspiciousParams(u) || /\b(pixel|beacon|track|open)\b/i.test(u.pathname));
-        if (susp) res.suspicious.push({ url: cand, reason: 'srcset' }); else res.externals.push({ url: cand, host: u?.hostname||'' });
-      });
-      ['data-src','data-original','data-lazy','data-lazy-src','data-url'].forEach(an => {
-        const v = img.getAttribute(an);
-        if (isRemote(v)) {
-          const u = tryURL(v);
-          const susp = u && (hasSuspiciousParams(u) || /\b(pixel|beacon|track|open)\b/i.test(u.pathname));
-          if (susp) res.suspicious.push({ url: v, reason: 'data-src' }); else res.externals.push({ url: v, host: u?.hostname||'' });
-        }
-      });
-    });
-
-    doc.querySelectorAll('[style*="url("]').forEach(el => {
-      const style = el.getAttribute('style') || '';
-      const urls = Array.from(style.matchAll(/url\(([^)]+)\)/gi)).map(m => (m[1]||'').replace(/["']/g,'').trim());
-      urls.forEach(raw => {
-        if (!isRemote(raw)) return;
-        const u = tryURL(raw);
-        const susp = u && (hasSuspiciousParams(u) || /\b(pixel|beacon|track|open)\b/i.test(u.pathname));
-        if (susp) res.suspicious.push({ url: raw, reason: 'css-bg' }); else res.externals.push({ url: raw, host: u?.hostname||'' });
-      });
-    });
-
-    doc.querySelectorAll('a[href]').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (!isRemote(href)) return;
-      const u = tryURL(href);
-      const host = u?.hostname.toLowerCase() || '';
-      const path = u?.pathname || '';
-      const params = u?.searchParams;
-      const keys = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','gclid','fbclid','msclkid','mc_cid','mc_eid','mkt_tok','hsenc','hsmi','spm','clickid','trace','tracelog','rid','cid','uid','token','signature'];
-      const hasKey = params && keys.some(k => params.has(k));
-      const pathSusp = /\b(unsubscribe|click|track|redirect|trk|link)\b/i.test(path);
-      const hostSusp = /\b(trk|click|email|link)\b/i.test(host);
-      if (hasKey || pathSusp || hostSusp) res.links.push({ url: href, host, reason: hasKey? 'param' : pathSusp? 'path':'host' });
-    });
-
-    function dedupe(arr){ const s = new Set(); return arr.filter(x=> (s.has(x.url)? false : (s.add(x.url), true))); }
-    res.suspicious = dedupe(res.suspicious);
-    res.externals = dedupe(res.externals);
-    res.links = dedupe(res.links);
-    return res;
+    return globalThis.PixelGuardScanner.scanHtml(html, { senderDomain });
   }
 })();

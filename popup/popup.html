@@ -4,27 +4,57 @@
     <meta charset="utf-8" />
     <title>PixelGuard</title>
     <style>
-      :root { --bg:#0b0d0f; --fg:#e6f1ef; --muted:#b5c9c3; --accent:#00e676; --danger:#e53935; --panel:#121517; --border:#2b363c; --s:#e53935; --e:#00bfa5; --l:#ff9800; }
+      :root { --bg:#0b0d0f; --fg:#e6f1ef; --muted:#b5c9c3; --accent:#00e676; --danger:#e53935; --panel:#121517; --border:#2b363c; --surface:#0f1316; --s:#e53935; --e:#00bfa5; --l:#ff9800; }
       html, body { background: var(--bg); color: var(--fg); }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; margin: 12px; }
-      h3 { margin: 0 0 10px; color:#7df9b9; letter-spacing:.2px; }
-      .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; flex-wrap: nowrap; }
+      body { box-sizing:border-box; width:460px; max-width:460px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; margin: 0; padding: 10px; font-size: 13px; }
+      h3 { margin: 0 0 8px; color:#7df9b9; letter-spacing:0; font-size:17px; line-height:1.2; }
+      .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; flex-wrap: nowrap; }
       .panel { background: var(--panel); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px; padding:10px; }
       .muted { color: var(--muted); }
-      .stat { font-weight:700; }
+      .stat { font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       a { color: #7df9b9; }
       button { padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#1a1f23; color:var(--fg); cursor:pointer; }
       button:hover { background:#22272b; }
       #toggle.on { background: #0c8; border-color:#0b7; color:#082017; }
       #toggle.off { background: var(--danger); border-color:#b71c1c; }
-      .chips { display:flex; gap:8px; align-items:center; }
-      .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:16px; font-weight:700; }
+      .chips { display:flex; gap:6px; align-items:center; justify-content:flex-end; min-width:0; flex-wrap:wrap; }
+      .chip { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:12px; font-weight:700; font-size:12px; line-height:1.45; white-space:nowrap; }
       .chip-s { background: var(--s); color:#fff; }
       .chip-e { background: var(--e); color:#001814; }
       .chip-l { background: var(--l); color:#1a1a1a; }
       .badge-sm { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:12px; font-weight:700; font-size:11px; line-height:1; background: var(--danger); color:#fff; border:1px solid #b71c1c; }
       .muted-badge { background:#2b363c; color:#c7d5d0; border-color:#2b363c; }
       .muted-note { font-size:11px; opacity:0.85; margin-left:6px; }
+      .details-shell { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+      .finding-section { border:1px solid #2c3a42; border-radius:8px; background:var(--surface); overflow:hidden; }
+      .finding-section summary { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; cursor:pointer; list-style:none; border-bottom:1px solid transparent; }
+      .finding-section.suspicious summary { background:var(--s); color:#fff; }
+      .finding-section.external summary { background:var(--e); color:#001814; }
+      .finding-section.links summary { background:var(--l); color:#1a1a1a; }
+      .finding-section.suspicious { border-color:#8f2f33; }
+      .finding-section.external { border-color:#008b80; }
+      .finding-section.links { border-color:#b36c00; }
+      .finding-section summary::-webkit-details-marker { display:none; }
+      .section-title { display:flex; align-items:center; gap:7px; min-width:0; font-weight:700; }
+      .section-count { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 7px; border-radius:10px; font-size:11px; font-weight:800; background:rgba(0,0,0,.18); color:inherit; }
+      .section-chevron { color:inherit; font-size:11px; transition:transform .12s ease; }
+      .finding-section[open] summary { border-bottom-color:#223038; }
+      .finding-section[open] .section-chevron { transform:rotate(90deg); }
+      .finding-list { display:flex; flex-direction:column; gap:6px; padding:0 10px 10px; }
+      .finding-item { border-top:1px solid #1d282e; padding-top:6px; min-width:0; }
+      .finding-main { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
+      .finding-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+      .finding-host { font-weight:700; color:#effff9; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .confidence { flex:0 0 auto; border-radius:10px; padding:1px 6px; font-size:10px; line-height:1.5; text-transform:uppercase; letter-spacing:.2px; background:#243039; color:#cfe9e1; }
+      .confidence.high { background:#5a1f25; color:#ffd6d6; }
+      .confidence.medium { background:#4a3414; color:#ffe3ad; }
+      .confidence.low { background:#1f3431; color:#bdf4e5; }
+      .finding-reason { margin-top:2px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .finding-url { margin-top:1px; color:#8fa49d; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:ltr; }
+      .copy-btn { padding:1px 7px; border-radius:10px; font-size:10px; line-height:1.5; color:#d6fff0; border-color:#31444b; background:#172328; }
+      .copy-btn:hover { background:#203038; }
+      .show-more { align-self:flex-start; margin-top:2px; padding:3px 7px; font-size:12px; border-radius:5px; }
+      .empty-details { color:var(--muted); padding:8px; border:1px dashed #263238; border-radius:7px; background:var(--surface); }
     </style>
   </head>
   <body>
@@ -42,16 +72,10 @@
         <span class="muted" data-i18n="popup_senderDomain">Sender domain</span>
         <span id="senderDomain" class="stat">-</span>
       </div>
-      <!-- Detailed rows hidden to reduce repetition; summary pills above show counts -->
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_suspiciousPixels">Suspicious pixels</span><span class="stat" id="suspCount">0</span></div>
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_externalImages">External images</span><span class="stat" id="extCount">0</span></div>
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_trackingLinks">Tracking links</span><span class="stat" id="linkCount">0</span></div>
-      <div style="margin-top:8px">
-        <details id="detailsList">
-          <summary data-i18n="popup_showDetails">Show details</summary>
-          <ul id="list"></ul>
-        </details>
-      </div>
+      <div id="detailsSections" class="details-shell" aria-live="polite"></div>
     </div>
     <div class="muted" style="font-size:12px; text-align:center; margin-top:8px; display:flex; justify-content:center; gap:16px;">
       <a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer" data-i18n="ui_buyCoffee">Buy me a coffee</a>
@@ -59,4 +83,4 @@
     </div>
     <script src="popup.js"></script>
   </body>
-  </html>
+</html>

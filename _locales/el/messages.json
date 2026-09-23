@@ -1,25 +1,23 @@
 {
   "extensionName": { "message": "PixelGuard" },
-  "extensionDescription": { "message": "Εντοπίζει pixel παρακολούθησης, συνδέσμους tracking και εξωτερικές εικόνες στα email του Thunderbird." },
+  "extensionDescription": { "message": "Reports possible tracking pixels, suspicious links, and external images in Thunderbird emails." },
 
   "ui_detectedTotal": { "message": "Detected (total):" },
   "ui_openOptions": { "message": "Settings" },
   "ui_buyCoffee": { "message": "Buy me a coffee" },
   "popup_thisMessage": { "message": "This message" },
   "popup_senderDomain": { "message": "Sender domain" },
-  "popup_whitelistAdd": { "message": "Whitelist" },
-  "popup_whitelistRemove": { "message": "Remove" },
-  "popup_suspiciousPixels": { "message": "Suspicious pixels" },
+  "popup_suspiciousPixels": { "message": "Alerts" },
   "popup_externalImages": { "message": "External images" },
-  "popup_trackingLinks": { "message": "Tracking links" },
+  "popup_trackingLinks": { "message": "Suspicious links" },
   "popup_scannedAt": { "message": "Scanned at" },
   "popup_showDetails": { "message": "Show details" },
   "popup_summary": { "message": "Summary" },
   "popup_rescan": { "message": "Rescan now" },
-  "popup_rescanning": { "message": "Rescanning…" },
+  "popup_rescanning": { "message": "Rescanning..." },
   "popup_done": { "message": "Done" },
-  "popup_label_pixels": { "message": "pixels" },
-  "popup_label_pixel": { "message": "pixel" },
+  "popup_label_pixels": { "message": "alerts" },
+  "popup_label_pixel": { "message": "alert" },
   "popup_label_images": { "message": "images" },
   "popup_label_image": { "message": "image" },
   "popup_label_links": { "message": "links" },
@@ -28,9 +26,9 @@
   "state_on": { "message": "ON" },
   "state_off": { "message": "OFF" },
 
-  "banner_ariaLabel": { "message": "PixelGuard tracking warning" },
+  "banner_ariaLabel": { "message": "PixelGuard tracking activity report" },
   "banner_detected": {
-    "message": "Detected $COUNT$ possible tracking pixel(s) in this email.",
+    "message": "Possible tracking activity found: $COUNT$ item(s).",
     "placeholders": { "count": { "content": "$1" } }
   },
   "banner_allowDomain": {
@@ -39,14 +37,11 @@
   },
   "unknownDomain": { "message": "unknown" },
   "banner_moreInfo": { "message": "More info / Options" },
-  "banner_externalImagesTitle": { "message": "External images loaded" },
-  "banner_trackingLinksTitle": { "message": "Tracking links detected" },
+  "banner_externalImagesTitle": { "message": "External images found" },
+  "banner_trackingLinksTitle": { "message": "Suspicious links found" },
   "banner_dismiss": { "message": "Dismiss" },
 
   "options_title": { "message": "Settings" },
-  "options_whitelistTitle": { "message": "Whitelist domains" },
-  "options_whitelistPlaceholder": { "message": "e.g. example.com" },
-  "options_whitelistAdd": { "message": "Add" },
   "options_remove": { "message": "Remove" },
   "options_suspiciousHostsTitle": { "message": "Suspicious host patterns" },
   "options_suspiciousHostsHint": { "message": "Supports ** as wildcard. One per line." },
@@ -65,6 +60,19 @@
   "options_debugMode": { "message": "Debug mode" },
   "options_debugTitle": { "message": "Debug" },
   "options_debugEnable": { "message": "Enable debug mode" },
-  "ui_sinceInstall": { "message": "since installation" }
+  "ui_sinceInstall": { "message": "since installation" },
+  "popup_suspiciousImages": { "message": "Suspicious" },
+  "banner_suspiciousImagesTitle": { "message": "Probable/suspicious images" },
+  "popup_showAll": {
+    "message": "Show all $COUNT$",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "popup_showLess": { "message": "Show less" },
+  "popup_noDetails": { "message": "No details" },
+  "popup_suspicious": { "message": "Suspicious" },
+  "popup_label_alerts": { "message": "alerts" },
+  "popup_label_alert": { "message": "alert" },
+  "popup_copy": { "message": "Copy" },
+  "popup_copied": { "message": "Copied" },
+  "popup_copyFailed": { "message": "Copy failed" }
 }
-
