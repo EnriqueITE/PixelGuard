@@ -183,7 +183,7 @@ test('ordinary URL text remains detected outside the excluded banner', async () 
 });
 
 function backgroundHarness(overrides = {}) {
-  const time = clock(), writes = [], badges = [], contexts = [];
+  const time = clock(), writes = [], badges = [], contexts = [], registrations = [];
   let display, close, runtime, current = { id: 1, author: 'a@example.com' };
   const browser = {
     storage: { local: { get: overrides.getSettings || (async () => ({})), set: async v => {
@@ -192,7 +192,13 @@ function backgroundHarness(overrides = {}) {
     } } },
     runtime: { getBrowserInfo: async () => ({ version: '115' }), onInstalled: { addListener() {} },
       onMessage: { addListener: fn => { runtime = fn; } } },
-    messageDisplayScripts: { register: async () => {} },
+    messageDisplayScripts: { register: async options => {
+      // Thunderbird 115 rejects options outside its public registration schema.
+      if (Object.keys(options).some(key => !['css', 'js'].includes(key))) {
+        throw new Error('Unexpected messageDisplayScripts registration properties');
+      }
+      registrations.push(options);
+    } },
     browserAction: { setBadgeText: async d => {
       if (overrides.setBadge) await overrides.setBadge(d);
       badges.push(d);
@@ -206,12 +212,24 @@ function backgroundHarness(overrides = {}) {
   const context = vm.createContext({ browser, console, structuredClone, ...time,
     PixelGuardScanner: { scanHtml: html => ({ suspicious: [{ url: `https://vendor.invalid/${html}` }], externals: [], links: [] }) } });
   load('background.js', context);
-  return { time, writes, badges, contexts,
+  return { time, writes, badges, contexts, registrations,
     show(id = 1, tabId = 7) { current = { id, author: `a@sender${id}.invalid` }; return display({ id: tabId }, current); },
     close: id => close(id),
     send: (msg, tabId = 7) => new Promise(resolve => runtime(msg, { tab: { id: tabId } }, resolve))
   };
 }
+
+test('background registers its banner scripts once using Thunderbird 115 options', async () => {
+  const h = backgroundHarness();
+  await flush();
+  assert.equal(h.registrations.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.registrations[0])), {
+    js: [{ file: 'content/scanner.js' }, { file: 'content/scan.js' }],
+    css: [{ file: 'content/banner.css' }]
+  });
+  await h.show();
+  assert.equal(h.registrations.length, 1);
+});
 
 test('background counts a pixel once across repeat events/manual rescans and scopes badges', async () => {
   const h = backgroundHarness();

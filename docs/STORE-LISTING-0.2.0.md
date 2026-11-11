@@ -67,6 +67,7 @@ La interfaz de VirusTotal está traducida al español, inglés, alemán, francé
 - Open the official VirusTotal report from a more visible section in the message panel.
 - Settings clearly show when a key is saved, without displaying the key, and allow replacing or deleting it.
 - Improved stability when switching messages, closing the tracking banner and rescanning. Prevented duplicate counts and improved detection of tiny CSS-background images.
+- Fixed tracking-banner registration using options compatible with Thunderbird 115.
 
 VirusTotal account terms and limits apply. Neither a missing report nor zero detections guarantees safety. All lookups are optional and leave PixelGuard's tracking detection independent.
 
@@ -77,6 +78,7 @@ VirusTotal account terms and limits apply. Neither a missing report nor zero det
 - Abre el informe oficial de VirusTotal desde una sección más visible del panel del mensaje.
 - Los ajustes indican cuándo hay una clave guardada, sin mostrarla, y permiten reemplazarla o eliminarla.
 - Mejoras de estabilidad al cambiar de mensaje, cerrar el aviso de rastreo y repetir el análisis. Se evitan recuentos duplicados y mejora la detección de imágenes diminutas en fondos CSS.
+- Corregido el registro del aviso de rastreo con opciones compatibles con Thunderbird 115.
 
 Se aplican los límites y las condiciones de la cuenta de VirusTotal. La ausencia de un informe o cero detecciones no garantizan seguridad. Las consultas son opcionales e independientes de la detección de rastreo de PixelGuard.
 

@@ -5,18 +5,18 @@ Use only a separate test profile and synthetic messages. Do not test against a p
 ## Validation status
 
 - Baseline: 25 scanner/lifecycle tests passed before the VirusTotal implementation.
-- The full implementation suite now passes 72 tests. Validator evidence and warning classifications are recorded in [VALIDATION-0.2.0.md](VALIDATION-0.2.0.md).
+- The full implementation suite now passes 73 tests. Validator evidence and warning classifications are recorded in [VALIDATION-0.2.0.md](VALIDATION-0.2.0.md).
 - Authenticated VirusTotal requests require a key entered through the test profile's Settings UI. Simulated responses are not a live-service test.
 - This local build has not been submitted to or approved by ATN.
 
 | Check | Result |
 | --- | --- |
-| Full automated suite after implementation | Passed: 72 tests |
+| Full automated suite after implementation | Passed: 73 tests |
 | Manifest/package checks and warning review | Thunderbird webext-linter 2.5.1: 0 findings. Mozilla addons-linter 10.15.0: 0 errors, 15 reviewed Firefox-specific warnings. |
 | Thunderbird 115 isolated-profile run | Native smoke passed on 115.0 with the final XPI; interactive permission flow remains pending. |
 | Installed Thunderbird isolated-profile run | Native smoke passed on 160.0 with the final XPI; interactive permission flow remains pending. |
 | Real VirusTotal request and official report | Pending; requires UI-entered key |
-| Package contents and SHA-256 | Passed: 28 files match source; SHA-256 `e48f8c4625060b6f2fa7b1c5a4ffdbe185a4affdc232919bf0505914e21593f3` |
+| Package contents and SHA-256 | Passed: 28 files match source; SHA-256 `52f1c9d8499d8604c3352b5f0543e49588e60606956e61fb7afa309b6ebc1c87` |
 
 ## Automated checks
 
@@ -39,6 +39,7 @@ The final XPI listed above was installed temporarily in fresh, headless Thunderb
 The production addon was installed unchanged. A separate temporary helper, using public APIs and the inventory module copied byte-for-byte from that XPI, exercised synthetic messages. These checks passed on both versions:
 
 - The XPI installs and optional permissions are absent initially.
+- The production content script and scanner initialize in the synthetic message, and exactly one tracking banner is visible. The probe only reads this state; it does not inject the detector to make the assertion pass.
 - Native extension-page DOMParser collects the exact expected URLs, including separation of adjacent block text.
 - The local sink receives no resource GETs from image, iframe, CSS background or `@import` fixtures while parsing and displaying mail with remote content blocked.
 - A synthetic message opens in a normal tab and a standalone message window.
@@ -48,10 +49,10 @@ The production addon was installed unchanged. A separate temporary helper, using
 
 Evidence is local and not included in the XPI:
 
-- `dist/runtime-qa/release-final-installed-20261111-141949/result.json` and `options.png`
-- `dist/runtime-qa/release-final-tb115-20261111-141948/result.json` and `options.png`
+- `dist/runtime-qa/compat-fixed-tb160-injection-20261111-144305/result.json` and `options.png`
+- `dist/runtime-qa/compat-fixed-tb115-injection-20261111-144245/result.json` and `options.png`
 
-Both final-XPI runs completed on the first attempt, and their QA processes were closed. Some earlier development runs timed out during driver startup or could not read an options-page context; those incomplete sessions are not counted as successful addon tests. The successful runs above supersede earlier artifact checks. Permission gestures and the complete UI flow remain unverified by this automation.
+Both final-XPI runs completed, and their QA processes were closed. The preceding XPI (`e48f8c4625060b6f2fa7b1c5a4ffdbe185a4affdc232919bf0505914e21593f3`) failed the banner-injection assertion on 115.0, as recorded in `dist/runtime-qa/compat-old-tb115-injection-20261111-144304/result.json`. Earlier development attempts with driver startup, context or argument-normalization problems are not used as production verdicts. The successful runs above supersede earlier installation/inventory-only checks. Permission gestures and the complete UI flow remain unverified by this automation.
 
 Replay requires Mozilla's `marionette_driver` package, locally installed under `dist/qa-tools/python`:
 

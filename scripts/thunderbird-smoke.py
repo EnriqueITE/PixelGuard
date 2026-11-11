@@ -140,6 +140,54 @@ def main():
                 result['helper'] = payload
                 result['helper']['resourceRequests'] = payload.get('resourceRequests', [])
                 result['checks'].append({'name': 'no_parser_or_message_resource_fetch', 'passed': not payload.get('resourceRequests')})
+                message_tab = next((check.get('detail', {}).get('tabId')
+                                    for check in payload.get('checks', [])
+                                    if check['name'] == 'open_message_tab' and check['passed']), None)
+                if message_tab is None:
+                    raise RuntimeError('QA helper did not leave a normal message tab to inspect')
+                # Read the production extension's isolated world. Do not inject the
+                # scanner here: the check must fail when registration was rejected.
+                for attempt in range(12):
+                    result['messageScript'] = client.execute_async_script("""
+                      const tabId = arguments[0];
+                      const done = arguments[arguments.length-1];
+                      (async () => {
+                        const { ExtensionParent } = ChromeUtils.importESModule('resource://gre/modules/ExtensionParent.sys.mjs');
+                        const extension = ExtensionParent.GlobalManager.getExtension('pixel-guard@enriqueite.com');
+                        const context = Array.from(extension.views).find(v => v.viewType === 'background');
+                        const execute = await context.apiCan.asyncFindAPIPath('tabs.executeScript');
+                        // This test-only bridge calls the implementation after
+                        // schema normalization: include the standard defaults.
+                        return execute(tabId, {file: null, frameId: null, allFrames: false,
+                          matchAboutBlank: false, runAt: 'document_idle', code: `(() => {
+                          const banners = document.querySelectorAll('.pixelguard-banner');
+                          const banner = banners[0];
+                          return {
+                            initialized: globalThis.PixelGuardScanDocument === document,
+                            scannerAvailable: typeof globalThis.PixelGuardScanner?.scanDocument === 'function',
+                            bannerCount: banners.length,
+                            bannerVisible: !!banner && banner.getBoundingClientRect().height > 0 &&
+                              getComputedStyle(banner).display !== 'none' && getComputedStyle(banner).visibility !== 'hidden'
+                          };
+                        })()`});
+                      })().then(done, error => done({error:String(error), message:error?.message, detail:JSON.stringify(error)}));
+                    """, script_args=[message_tab])
+                    observations = result['messageScript']
+                    if isinstance(observations, list) and any(
+                            observation.get('initialized') and observation.get('scannerAvailable') and
+                            observation.get('bannerCount') == 1 and observation.get('bannerVisible')
+                            for observation in observations):
+                        break
+                    if attempt < 11:
+                        time.sleep(0.3)
+                observations = result['messageScript']
+                result['checks'].append({
+                    'name': 'production_message_script_and_visible_banner',
+                    'passed': isinstance(observations, list) and any(
+                        observation.get('initialized') and observation.get('scannerAvailable') and
+                        observation.get('bannerCount') == 1 and observation.get('bannerVisible')
+                        for observation in observations)
+                })
                 result['optionsTab'] = client.execute_async_script("""
                   const done = arguments[arguments.length-1];
                   (async () => {

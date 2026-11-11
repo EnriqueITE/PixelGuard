@@ -39,8 +39,6 @@
         await browser.messageDisplayScripts.register({
           js: [{ file: "content/scanner.js" }, { file: "content/scan.js" }],
           css: [{ file: "content/banner.css" }],
-          runAt: "document_end",
-          allFrames: true,
         });
         registered = true;
         if (state.settings?.debug) console.log("[PG/bg] messageDisplayScripts.register OK");
