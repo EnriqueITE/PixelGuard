@@ -3,7 +3,7 @@
 PixelGuard is a Thunderbird extension that **reports** probable tracking pixels, suspicious links, and external images when you open an email. It explains the evidence behind each finding so you can decide whether to load remote content. Optional, manual VirusTotal lookups add context about links and attachments; they do not change PixelGuard's tracking detections or Thunderbird's remote-content controls.
 
 ## Installation
-- Install the published build from the official Thunderbird Add-on store (search for "PixelGuard"). The store version may differ from the source version in this repository.
+- Install PixelGuard from its [official Thunderbird Add-ons page](https://addons.thunderbird.net/thunderbird/addon/pixelguard/). The store version may differ from the source version in this repository. GitHub hosts source and documentation; packaged XPI downloads are distributed through the official store.
 - Contributors can clone this repository, build from source, and load the extension temporarily in Thunderbird for testing.
 
 ## What It Does

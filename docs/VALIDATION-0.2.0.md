@@ -4,7 +4,7 @@ Date: 2026-11-11. This record covers the 0.2.0 source publication candidate. Sto
 
 ## Automated checks
 
-- 72 Node tests passed: the original 25 scanner/lifecycle checks, plus inventory, service, permission, consent, UI and package-policy checks. Saved-key feedback is checked after saving, reopening, disabling and deleting, including failed saves and denied permissions.
+- 73 Node tests passed: the original 25 scanner/lifecycle checks, plus inventory, service, permission, consent, UI and package-policy checks. Registration is checked against the Thunderbird 115 option contract. Saved-key feedback is checked after saving, reopening, disabling and deleting, including failed saves and denied permissions.
 - `git diff --check` passed. Git's CRLF conversion notices are working-tree line-ending advisories, not failing checks.
 - XPI validation compares every archived file byte-for-byte with the runtime source allowlist, rejects duplicate paths, validates JSON and tests archive integrity. Tests, profiles, dependencies and QA tools are excluded.
 - The prior `PixelGuard-0.1.30.xpi` is preserved.
@@ -35,11 +35,21 @@ Local report: `dist/qa-tools/thunderbird-linter-report.json`.
 
 Local report: `dist/addons-linter-0.2.0.json`. The Thunderbird-specific validator reports no findings for these items.
 
+The user-provided ATN report lists 0 errors, 13 warnings and 0 notices: the three Thunderbird permissions and ten API references in the table above. The two additional warnings in the local generic validator concern Firefox data-collection metadata and Android. Neither report identifies an Experiment, and the required Thunderbird permissions must not be removed to silence Firefox-only warnings.
+
+### Registration compatibility correction
+
+A focused comparison with the Thunderbird 115 schema found two unsupported options in the existing message-script registration: `runAt` was added in Thunderbird 126, and `allFrames` is not a supported option for this API. Unknown options can reject registration even when the XPI installs. Both were removed; registration now passes only `css` and `js`, using the platform's default injection timing. See the [public registration option reference](https://webextension-api.thunderbird.net/en/mv2/messageDisplayScripts.html#registeredmessagedisplayscriptoptions).
+
+The native probe now reads the production content-script marker and scanner and requires exactly one visible banner in the synthetic message. It does not inject the missing production scripts to make the check pass. Earlier installation/inventory smoke checks did not test that behavior.
+
+The preceding XPI (`e48f8c4625060b6f2fa7b1c5a4ffdbe185a4affdc232919bf0505914e21593f3`) failed this new check on Thunderbird 115: no production script marker, scanner or banner. The corrected XPI passed on both 115.0 and 160.0 with its script initialized and exactly one visible banner. The negative control is recorded under `dist/runtime-qa/compat-old-tb115-injection-20261111-144304/result.json`.
+
 ## Package
 
 - File: `dist/PixelGuard-0.2.0.xpi`
-- 28 runtime files, 759089 bytes.
-- SHA-256: `e48f8c4625060b6f2fa7b1c5a4ffdbe185a4affdc232919bf0505914e21593f3`
+- 28 runtime files, 759059 bytes.
+- SHA-256: `52f1c9d8499d8604c3352b5f0543e49588e60606956e61fb7afa309b6ebc1c87`
 - Exact source comparison: `dist/package-validation-0.2.0.json`.
 
 ## Runtime and remaining verification
@@ -50,8 +60,8 @@ The final XPI includes saved-key feedback in Settings, a more prominent popup se
 
 Evidence under ignored `dist/runtime-qa`:
 
-- `release-final-tb115-20261111-141948/result.json` and `options.png`
-- `release-final-installed-20261111-141949/result.json` and `options.png`
+- `compat-fixed-tb115-injection-20261111-144245/result.json` and `options.png`
+- `compat-fixed-tb160-injection-20261111-144305/result.json` and `options.png`
 
 These are targeted runtime smoke tests, not a complete end-to-end UI or remote-service test. The QA helper and automation use a separate profile and are excluded from the release XPI. The options page was visually inspected on both versions, and no QA processes remained after the checks. Real permission-prompt gestures, activation and the complete popup-to-VirusTotal flow were not verified by this automation. Reproduction instructions are in `LOCAL-TESTING.md`.
 
