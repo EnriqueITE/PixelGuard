@@ -26,13 +26,24 @@ $zipPath = Join-Path $distDir ("PixelGuard-$version.zip")
 $xpiPath = Join-Path $distDir ("PixelGuard-$version.xpi")
 
 # Prepare staging directory
-if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
+$resolvedRoot = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd('\') + '\'
+$resolvedStage = [System.IO.Path]::GetFullPath($stageDir)
+if (-not $resolvedStage.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Staging directory must remain inside the workspace.'
+}
+foreach ($candidate in @($distDir, $stageDir)) {
+  if ((Test-Path -LiteralPath $candidate) -and ((Get-Item -LiteralPath $candidate).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    throw 'Packaging directories must not be reparse points.'
+  }
+}
+if (Test-Path -LiteralPath $resolvedStage) { Remove-Item -LiteralPath $resolvedStage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 
 # Files and folders to include
 $include = @(
   'manifest.json',
   'background.js',
+  'virustotal',
   'assets',
   'content',
   'options',

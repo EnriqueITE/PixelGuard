@@ -128,3 +128,25 @@ test('remote signature image with blocked zero layout stays external', () => {
   assert.equal(result.externals.length, 1);
   assert.equal(result.externals[0].classification, 'external-image');
 });
+
+test('CSS background retains tiny dimensions and hidden visibility evidence', () => {
+  for (const style of ['width:1px;height:1px', 'display:none', 'opacity:0']) {
+    const result = scan(`<div style="${style};background-image:url(https://cdn.vendor.net/p.gif)"></div>`);
+    assert.equal(result.suspicious.length, 1, style);
+    assert.equal(result.suspicious[0].classification, 'tracking-pixel');
+  }
+});
+
+test('large visible CSS background remains external, local backgrounds ignored', () => {
+  const result = scan('<div style="width:600px;height:300px;background:url(https://cdn.example.com/hero.jpg?utm_campaign=sale)"></div>');
+  assert.equal(result.suspicious.length, 0);
+  assert.equal(result.externals.length, 1);
+  assert.equal(scan('<div style="width:1px;height:1px;background:url(cid:part1)"></div>').suspicious.length, 0);
+});
+
+test('existing em and percentage detection remains unchanged by user request', () => {
+  for (const unit of ['em', '%']) {
+    const result = scan(`<img src="https://cdn.example.com/p.gif" style="width:1${unit};height:1${unit}">`);
+    assert.equal(result.suspicious.length, 1);
+  }
+});

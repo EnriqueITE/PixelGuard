@@ -1,10 +1,25 @@
 /* global browser, messenger, PixelGuardScanner */
 (() => {
+  // Registration retries or manual injection must not create competing observers.
+  if (globalThis.PixelGuardScanDocument === document) return;
+  globalThis.PixelGuardScanDocument = document;
   const API = (typeof browser !== "undefined") ? browser : (typeof messenger !== "undefined" ? messenger : null);
   const THROTTLE_MS = 400;
   let currentDomain = "";
   let lastBanner = null;
   let debugEnabled = false;
+  let dismissed = false;
+  let lastSignature = null;
+  let currentMessageId = null;
+  let contextVersion = 0;
+  const ownedBanners = new WeakSet();
+
+  function isOwnNode(node) {
+    for (let current = node; current; current = current.parentNode) {
+      if (ownedBanners.has(current)) return true;
+    }
+    return false;
+  }
 
   function debugLog(...args) {
     if (!debugEnabled) return;
@@ -19,7 +34,9 @@
     if (!globalThis.PixelGuardScanner?.scanDocument) {
       return { suspicious: [], externals: [], links: [] };
     }
-    return globalThis.PixelGuardScanner.scanDocument(doc, { senderDomain: currentDomain });
+    return globalThis.PixelGuardScanner.scanDocument(doc, {
+      senderDomain: currentDomain, excludeNode: isOwnNode
+    });
   }
 
   function removeBanner() {
@@ -69,10 +86,11 @@
     banner.appendChild(wrap);
   }
 
-  async function renderBanner(findings) {
+  function renderBanner(findings) {
     removeBanner();
 
     const banner = document.createElement("div");
+    ownedBanners.add(banner);
     banner.className = "pixelguard-banner";
     banner.setAttribute("role", "region");
     banner.setAttribute("aria-label", t("banner_ariaLabel"));
@@ -109,7 +127,10 @@
     closeBtn.className = "pg-close";
     closeBtn.setAttribute("aria-label", t("banner_dismiss"));
     closeBtn.textContent = "x";
-    closeBtn.addEventListener("click", removeBanner);
+    closeBtn.addEventListener("click", () => {
+      dismissed = true;
+      removeBanner();
+    });
     header.appendChild(left);
     header.appendChild(closeBtn);
     banner.appendChild(header);
@@ -136,8 +157,6 @@
     const host = document.body || document.documentElement;
     host.insertBefore(banner, host.firstChild);
     lastBanner = banner;
-
-    try { await API.runtime.sendMessage({ type: "pg:detectedCount", count: findings.suspicious.length }); } catch (_) {}
   }
 
   function throttle(fn, wait) {
@@ -149,20 +168,41 @@
   }
 
   const doScan = throttle(async () => {
+    const version = contextVersion;
     const st = await (API?.runtime?.sendMessage ? API.runtime.sendMessage({ type: "pg:getState" }) : Promise.resolve({}));
+    if (version !== contextVersion) return;
     const debug = !!st?.debug;
     debugEnabled = debug;
     debugLog("[PG/cs] scanning...");
     const findings = scan(document);
     debugLog("[PG/cs] results", findings);
-    if (findings.suspicious.length > 0 || findings.externals.length > 0 || findings.links.length > 0 || debug) await renderBanner(findings); else removeBanner();
+    if (dismissed) return;
+    const signature = JSON.stringify([findings, debug]);
+    if (signature === lastSignature && lastBanner?.isConnected) return;
+    lastSignature = signature;
+    if (findings.suspicious.length > 0 || findings.externals.length > 0 || findings.links.length > 0 || debug) renderBanner(findings); else removeBanner();
   }, THROTTLE_MS);
 
-  const mo = new MutationObserver(doScan);
+  const mo = new MutationObserver(records => {
+    const changed = records.some(record => {
+      if (isOwnNode(record.target)) return false;
+      // Insertion/removal records target the parent, often the message body.
+      const nodes = [...record.addedNodes, ...record.removedNodes];
+      return nodes.some(node => !isOwnNode(node));
+    });
+    if (changed) doScan();
+  });
   mo.observe(document, { childList: true, subtree: true });
 
   (API?.runtime || browser.runtime).onMessage.addListener((msg) => {
     if (msg?.type === "pg:context") {
+      if (msg.messageId != null && currentMessageId != null && msg.messageId !== currentMessageId) {
+        dismissed = false;
+        lastSignature = null;
+        removeBanner();
+      }
+      currentMessageId = msg.messageId ?? currentMessageId;
+      contextVersion++;
       currentDomain = msg.domain || "";
       debugLog("[PG/cs] context domain", currentDomain);
       doScan();
@@ -178,8 +218,10 @@
 
   (async () => {
     try {
+      const version = contextVersion;
       const res = await API.runtime.sendMessage({ type: "pg:hello" });
-      if (res?.ok) {
+      if (res?.ok && version === contextVersion) {
+        currentMessageId = res.messageId ?? currentMessageId;
         if (res.domain) {
           currentDomain = res.domain;
           debugLog("[PG/cs] hello->domain", currentDomain);

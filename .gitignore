@@ -1,1 +1,19 @@
 dist/
+
+# Local credentials, profiles and development state are never publication inputs.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite-*
+*.db
+profiles/
+.codex/
+node_modules/
+__pycache__/
+*.pyc
+*.xpi
