@@ -49,7 +49,7 @@ For development, use a separate Thunderbird profile and synthetic messages. See 
 - The VirusTotal interface is translated in all included locales. Some existing tracking and general-settings labels are still in English.
 
 ## Privacy
-- Tracking analysis is local. If you enable VirusTotal, an explicit lookup sends the selected indicator and API key directly to VirusTotal over HTTPS. A file hash can identify a known file, and full URLs may contain private identifiers. See the complete [privacy notice](PRIVACY.md).
+- Tracking analysis is local. If you enable VirusTotal, an explicit lookup sends the selected indicator and API key directly to VirusTotal over HTTPS. A file hash can identify a known file, and full URLs may contain private identifiers. See the complete [privacy notice](PRIVACY.md) and its [translations](docs/privacy/README.md).
 
 ## Packaging
 - Include icons in `icons/` (16, 32, 48, 96, 128).
