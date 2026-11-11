@@ -45,8 +45,6 @@ In PixelGuard Settings you can disable VirusTotal, replace the key or delete it.
 - Optional `sensitiveDataUpload`: disclose and authorize the selected indicator sent to the third-party lookup service.
 - Optional `https://www.virustotal.com/*`: make the authenticated HTTPS request to the fixed VirusTotal endpoint.
 
-No Experiments, native helper, unrestricted host access or remote script is needed for the integration.
-
 ## Contact
 
 Email: hello@enriqueite.com
