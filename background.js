@@ -15,6 +15,7 @@
     settings: null,
     currentSenderDomainByTab: new Map(),
     findingsByTab: new Map(),
+    messagesByTab: new Map(),
     tbMajor: null,
     messageScriptsRegistered: false,
   };
@@ -71,8 +72,18 @@
     }
   }
 
-  async function saveSettings() {
-    await browser.storage.local.set({ settings: state.settings });
+  let settingsWrite = Promise.resolve();
+  let settingsRevision = 0;
+  let settingsDirty = false;
+  function saveSettings() {
+    settingsDirty = true;
+    const revision = ++settingsRevision;
+    const snapshot = structuredClone(state.settings);
+    settingsWrite = settingsWrite.catch(() => {}).then(async () => {
+      await browser.storage.local.set({ settings: snapshot });
+      if (revision === settingsRevision) settingsDirty = false;
+    });
+    return settingsWrite;
   }
 
   function parseDomainFromEmail(authorHeader) {
@@ -86,27 +97,34 @@
     }
   }
 
-  async function setBadge(text, tabId, color) {
-    try {
-      const details = tabId != null ? { text, tabId } : { text };
-      await browser.browserAction.setBadgeText(details);
-      if (color) {
-        const cdet = tabId != null ? { color, tabId } : { color };
-        await browser.browserAction.setBadgeBackgroundColor(cdet);
+  let badgeWrite = Promise.resolve();
+  function setBadge(text, tabId, color, isCurrent = () => true) {
+    badgeWrite = badgeWrite.catch(() => {}).then(async () => {
+      if (!isCurrent()) return;
+      try {
+        const details = tabId != null ? { text, tabId } : { text };
+        await browser.browserAction.setBadgeText(details);
+        if (color && isCurrent()) {
+          const cdet = tabId != null ? { color, tabId } : { color };
+          await browser.browserAction.setBadgeBackgroundColor(cdet);
+        }
+      } catch (_) {
+        // A closed/unavailable tab must not change every other tab's badge.
+        if (tabId != null || !isCurrent()) return;
+        try { await browser.browserAction.setBadgeText({ text }); } catch (_) {}
+        if (color) { try { await browser.browserAction.setBadgeBackgroundColor({ color }); } catch (_) {} }
       }
-    } catch (_) {
-      try { await browser.browserAction.setBadgeText({ text }); } catch (_) {}
-      if (color) { try { await browser.browserAction.setBadgeBackgroundColor({ color }); } catch (_) {} }
-    }
+    });
+    return badgeWrite;
   }
 
-  async function setBadgeForFindings(tabId, findings) {
+  async function setBadgeForFindings(tabId, findings, isCurrent) {
     const s = findings?.suspicious?.length || 0;
     const e = findings?.externals?.length || 0;
     const l = findings?.links?.length || 0;
 
     if (s === 0 && e === 0 && l === 0) {
-      await setBadge("", tabId);
+      await setBadge("", tabId, undefined, isCurrent);
       return;
     }
 
@@ -115,55 +133,95 @@
     const txt = `${format(s)}${format(e)}${format(l)}`;
 
     let color = l > 0 ? "#ff9800" : (s > 0 ? "#e53935" : (e > 0 ? "#00bfa5" : "#607d8b"));
-    await setBadge(txt, tabId, color);
+    await setBadge(txt, tabId, color, isCurrent);
   }
 
   // Init
-  loadSettings().then(() => setBadge(""));
+  const ready = loadSettings();
   try {
     browser.runtime.onInstalled.addListener(() => {
       registerMessageScripts();
     });
   } catch (_) {}
 
-  const handleMessageDisplayed = async (tab, message) => {
+  async function scanMessage(tabId, message) {
+    let session = state.messagesByTab.get(tabId);
+    if (session?.messageId !== message.id) {
+      if (session?.retryTimer) clearTimeout(session.retryTimer);
+      session = { messageId: message.id, countedUrls: new Set(), retryTimer: null };
+      state.messagesByTab.set(tabId, session);
+    }
+    if (session.retryTimer) clearTimeout(session.retryTimer);
+    const token = {};
+    session.token = token;
+    const isCurrent = () => state.messagesByTab.get(tabId) === session && session.token === token;
     const domain = parseDomainFromEmail(message.author || "");
-    state.currentSenderDomainByTab.set(tab.id, domain);
-    setBadge("");
+    state.currentSenderDomainByTab.set(tabId, domain);
+    state.findingsByTab.delete(tabId);
+    await ready;
+    if (!isCurrent()) return { ok: false };
+    await setBadge("", tabId, undefined, isCurrent);
+    if (!isCurrent()) return { ok: false };
     const dbg = !!state.settings?.debug;
-    if (dbg) console.log("[PG/bg] onMessageDisplayed tab=", tab.id, "domain=", domain);
+    if (dbg) console.log("[PG/bg] scanning tab=", tabId, "domain=", domain);
     const sendWithRetry = async (attempt = 1) => {
+      if (!isCurrent()) return;
       try {
-        await browser.tabs.sendMessage(tab.id, { type: "pg:context", domain });
+        await browser.tabs.sendMessage(tabId, { type: "pg:context", domain, messageId: message.id });
         if (dbg) console.log(`[PG/bg] context sent on attempt ${attempt}`);
       } catch (e) {
-        if (attempt < 12) {
+        if (isCurrent() && attempt < 12) {
           const delay = 150 * attempt;
           if (dbg) console.log(`[PG/bg] retry ${attempt} in ${delay}ms:`, String(e));
-          setTimeout(() => sendWithRetry(attempt + 1), delay);
+          session.retryTimer = setTimeout(() => sendWithRetry(attempt + 1), delay);
         } else if (dbg) {
-          console.log("[PG/bg] giving up sending context to tab", tab.id);
+          console.log("[PG/bg] giving up sending context to tab", tabId);
         }
       }
     };
     sendWithRetry();
 
     try {
-      if (state.settings?.debug) console.log("[PG/bg] scanning message in background for tab", tab.id);
       const html = await getMessageHtml(message);
+      if (!isCurrent()) return { ok: false };
       const findings = scanHtml(html, domain);
-      state.findingsByTab.set(tab.id, { findings, ts: Date.now(), domain });
+      state.findingsByTab.set(tabId, { findings, ts: Date.now(), domain });
       if (state.settings?.debug) console.log("[PG/bg] findings:", findings);
-      await setBadgeForFindings(tab.id, findings);
-      const n = Number(findings?.suspicious?.length || 0);
+      let n = 0;
+      for (const item of findings.suspicious) {
+        if (!session.countedUrls.has(item.url)) {
+          session.countedUrls.add(item.url);
+          n++;
+        }
+      }
       if (n > 0) {
         state.settings.counters.totalDetected += n;
-        await saveSettings();
       }
+      if (n > 0 || settingsDirty) {
+        try { await saveSettings(); } catch (e) {
+          // Keep the in-memory total and retry persistence on the next scan.
+          // A storage failure must not suppress the current findings/badge.
+          if (state.settings?.debug) console.log("[PG/bg] counter persistence error:", String(e));
+        }
+      }
+      if (!isCurrent()) return { ok: false };
+      await setBadgeForFindings(tabId, findings, isCurrent);
+      return { ok: isCurrent(), findings };
     } catch (e) {
       if (state.settings?.debug) console.log("[PG/bg] background scan error:", String(e));
+      return { ok: false, error: String(e) };
     }
-  };
+  }
+
+  const handleMessageDisplayed = (tab, message) => scanMessage(tab.id, message);
+
+  browser.tabs.onRemoved.addListener(tabId => {
+    const session = state.messagesByTab.get(tabId);
+    if (session?.retryTimer) clearTimeout(session.retryTimer);
+    state.messagesByTab.delete(tabId);
+    state.currentSenderDomainByTab.delete(tabId);
+    state.findingsByTab.delete(tabId);
+  });
 
   if (browser.messageDisplay?.onMessageDisplayed?.addListener) {
     browser.messageDisplay.onMessageDisplayed.addListener(handleMessageDisplayed);
@@ -172,6 +230,7 @@
   }
 
   async function handleRuntimeMessage(msg, sender) {
+    await ready;
     switch (msg?.type) {
       case "pg:getState": {
         if (state.settings?.debug) console.log("[PG/bg] getState from", sender?.tab?.id);
@@ -181,7 +240,7 @@
         const tabId = sender?.tab?.id;
         const domain = (tabId != null) ? (state.currentSenderDomainByTab.get(tabId) || "") : "";
         if (state.settings?.debug) console.log("[PG/bg] hello from", tabId, "-> domain:", domain);
-        return { ok: true, domain, settings: state.settings };
+        return { ok: true, domain, messageId: state.messagesByTab.get(tabId)?.messageId, settings: state.settings };
       }
       case "pg:getFindings": {
         let tabId = msg?.tabId;
@@ -199,27 +258,31 @@
           if (state.settings?.debug) console.log("[PG/bg] rescan skipped: messageDisplay.getDisplayedMessage unavailable");
           return { ok: false, error: "messageDisplay.getDisplayedMessage unsupported" };
         }
+        let tabId = sender?.tab?.id;
+        let placeholder = null;
         try {
-          let tabId = sender?.tab?.id;
           if (tabId == null) {
             const tabs = await browser.tabs.query({ active: true, currentWindow: true });
             if (tabs && tabs[0]) tabId = tabs[0].id;
           }
           if (tabId == null) return { ok: false };
+          let session = state.messagesByTab.get(tabId);
+          if (!session) {
+            // A manual scan can initialize a message already open at startup.
+            // Reserve identity before the lookup so closing the tab invalidates it.
+            placeholder = { messageId: null, token: {}, countedUrls: new Set(), retryTimer: null };
+            session = placeholder;
+            state.messagesByTab.set(tabId, session);
+          }
+          const token = session.token;
           const displayed = await browser.messageDisplay.getDisplayedMessage(tabId);
-          if (!displayed) return { ok: false };
-          const html = await getMessageHtml(displayed);
-          const domain = state.currentSenderDomainByTab.get(tabId) || "";
-          const findings = scanHtml(html, domain);
-          state.findingsByTab.set(tabId, { findings, ts: Date.now(), domain });
-          await setBadgeForFindings(tabId, findings);
-          const n = Number(findings?.suspicious?.length || 0);
-          if (n > 0) { state.settings.counters.totalDetected += n; await saveSettings(); }
-          if (state.settings?.debug) console.log('[PG/bg] manual rescan done', { tabId, counts: { s: findings.suspicious.length, e: findings.externals.length, l: findings.links.length } });
-          return { ok: true, findings };
+          if (!displayed || state.messagesByTab.get(tabId) !== session || session.token !== token || (session.messageId != null && displayed.id !== session.messageId)) return { ok: false };
+          return scanMessage(tabId, displayed);
         } catch (e) {
           if (state.settings?.debug) console.log('[PG/bg] manual rescan error', String(e));
           return { ok: false, error: String(e) };
+        } finally {
+          if (placeholder && state.messagesByTab.get(tabId) === placeholder) state.messagesByTab.delete(tabId);
         }
       }
 
@@ -248,21 +311,14 @@
           return { ok: false, error: String(e) };
         }
       }
-      case "pg:detectedCount": {
-        const n = Number(msg.count || 0);
-        if (n > 0) {
-          state.settings.counters.totalDetected += n;
-          await saveSettings();
-        }
-        await setBadge(n > 0 ? String(n) : "");
-        return { ok: true };
-      }
       default:
         return {};
     }
   }
 
   browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // VT has a separate authenticated handler and must never reach debug logging.
+    if (String(msg?.type || '').startsWith('pg:vt:')) return false;
     handleRuntimeMessage(msg, sender)
       .then(response => sendResponse(response))
       .catch(e => {

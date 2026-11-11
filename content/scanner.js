@@ -260,8 +260,10 @@
   function scanDocument(doc, options = {}) {
     const result = { suspicious: [], externals: [], links: [] };
     if (!doc?.querySelectorAll) return result;
+    const excluded = node => !!options.excludeNode?.(node);
 
     doc.querySelectorAll("img").forEach(img => {
+      if (excluded(img)) return;
       addFinding(result, classifyImage(img.getAttribute("src") || "", options, img, "src"));
       srcsetCandidates(img.getAttribute("srcset")).forEach(url => {
         addFinding(result, classifyImage(url, options, img, "srcset"));
@@ -275,17 +277,24 @@
     });
 
     doc.querySelectorAll('[style*="url("]').forEach(el => {
+      if (excluded(el)) return;
       const urls = Array.from(String(el.getAttribute("style") || "").matchAll(/url\(([^)]+)\)/gi))
         .map(m => (m[1] || "").replace(/["']/g, "").trim());
-      urls.forEach(url => addFinding(result, classifyImage(url, options, null, "css background")));
+      urls.forEach(url => addFinding(result, classifyImage(url, options, el, "css background")));
     });
 
     doc.querySelectorAll("a[href]").forEach(a => {
+      if (excluded(a)) return;
       addFinding(result, classifyLink(a.getAttribute("href") || ""));
     });
 
     try {
-      const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT, null);
+      const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (excluded(node)) return NodeFilter.FILTER_REJECT;
+          return node.nodeType === 3 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+      });
       const urlRegex = /(https?:\/\/[\w\-._~%!$&'()*+,;=:@/?#\[\]]+)/gi;
       let checked = 0;
       while (walker.nextNode()) {

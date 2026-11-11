@@ -2,7 +2,7 @@
     "manifest_version": 2,
     "name": "__MSG_extensionName__",
     "description": "__MSG_extensionDescription__",
-    "version": "0.1.29",
+    "version": "0.2.0",
     "homepage_url": "https://github.com/EnriqueITE/PixelGuard",
     "author": "Enrique Serrano Aparicio",
     "default_locale": "en",
@@ -20,9 +20,16 @@
     "background": {
         "scripts": [
             "content/scanner.js",
+            "virustotal/inventory.js",
+            "virustotal/service.js",
+            "virustotal/bootstrap.js",
             "background.js"
         ]
     },
+    "optional_permissions": [
+        "sensitiveDataUpload",
+        "https://www.virustotal.com/*"
+    ],
     "icons": {
         "48": "assets/icon-48.png",
         "96": "assets/icon-96.png"

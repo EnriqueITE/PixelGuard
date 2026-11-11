@@ -56,6 +56,7 @@
       .show-more { align-self:flex-start; margin-top:2px; padding:3px 7px; font-size:12px; border-radius:5px; }
       .empty-details { color:var(--muted); padding:8px; border:1px dashed #263238; border-radius:7px; background:var(--surface); }
     </style>
+    <link rel="stylesheet" href="vt.css" />
   </head>
   <body>
     <div class="panel">
@@ -77,10 +78,33 @@
       <div class="row" style="display:none"><span class="muted" data-i18n="popup_trackingLinks">Tracking links</span><span class="stat" id="linkCount">0</span></div>
       <div id="detailsSections" class="details-shell" aria-live="polite"></div>
     </div>
+    <details id="vtSection" class="vt-panel">
+      <summary>
+        <span class="vt-summary-icon" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+            <path d="M17 26H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11l6 6v3M17 4v7h7M10 10h3M10 15h5M10 20h3" />
+            <circle cx="22" cy="21" r="5" />
+            <path d="m26 25 4 4" />
+          </svg>
+        </span>
+        <span class="vt-summary-copy">
+          <span class="vt-summary-title" data-i18n="vt_title">Consult VirusTotal</span>
+          <span class="vt-summary-description" data-i18n="vt_summaryDescription">Manual checks for links and attachments</span>
+        </span>
+        <span class="vt-summary-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="vt-content">
+        <p class="muted" data-i18n="vt_intro">Manual reputation lookups for this message. No files are uploaded.</p>
+        <p id="vtStatus" role="status" aria-live="polite"></p>
+        <button type="button" id="vtSetup" data-i18n="vt_setup">Configure VirusTotal</button>
+        <div id="vtInventory"></div>
+      </div>
+    </details>
     <div class="muted" style="font-size:12px; text-align:center; margin-top:8px; display:flex; justify-content:center; gap:16px;">
       <a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer" data-i18n="ui_buyCoffee">Buy me a coffee</a>
       <a href="#" id="openOptions" data-i18n="ui_openOptions">Settings</a>
     </div>
     <script src="popup.js"></script>
+    <script src="vt.js"></script>
   </body>
 </html>

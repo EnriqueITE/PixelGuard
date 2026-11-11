@@ -21,6 +21,7 @@
       .danger { color: var(--danger); }
       a { color:#7df9b9; }
     </style>
+    <link rel="stylesheet" href="vt.css" />
   </head>
   <body>
     <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
@@ -31,6 +32,32 @@
 
 
 
+
+    <section class="panel" id="vtSettings" aria-labelledby="vtHeading">
+      <h2 id="vtHeading">VirusTotal</h2>
+      <p data-i18n="vt_settingsIntro">Optional manual lookups using your own API key. Opening messages or saving settings never sends a query.</p>
+      <p data-i18n="vt_disclosure">When you request a lookup, PixelGuard sends your API key and the selected domain, full URL or attachment SHA-256 directly to VirusTotal over HTTPS. No email body or attachment content is uploaded. Full URLs may contain private identifiers; even hashes can identify known files.</p>
+      <p data-i18n="vt_keyStorage">The key is stored locally in your Thunderbird profile, without synchronization or an encryption guarantee. It is excluded from PixelGuard exports and logs.</p>
+      <p data-i18n="vt_terms">Public keys are limited to 4 requests per minute and 500 per day. Commercial products and certain business workflows are restricted; your use must comply with your VirusTotal license.</p>
+      <p class="vt-links">
+        <a href="https://www.virustotal.com/gui/join-us" target="_blank" rel="noopener noreferrer" data-i18n="vt_getKey">Get your own key</a>
+        <a href="https://docs.virustotal.com/reference/public-vs-premium-api" target="_blank" rel="noopener noreferrer" data-i18n="vt_apiTerms">API conditions</a>
+        <a href="https://docs.virustotal.com/docs/privacy-policy" target="_blank" rel="noopener noreferrer" data-i18n="vt_privacy">VirusTotal privacy</a>
+      </p>
+      <div class="vt-key-label">
+        <label for="vtKey" data-i18n="vt_keyLabel">Your VirusTotal API key</label>
+        <span id="vtKeySaved" class="vt-key-saved" role="status" data-i18n="vt_keySaved" hidden>Key saved</span>
+      </div>
+      <input id="vtKey" type="password" autocomplete="off" spellcheck="false" aria-describedby="vtKeyHint" data-i18n-placeholder="vt_keyPlaceholder" />
+      <p id="vtKeyHint" class="muted" data-i18n="vt_keyEmptyHint">Your key will be stored locally when you save and enable the integration.</p>
+      <label class="vt-consent"><input id="vtConsent" type="checkbox" /><span data-i18n="vt_consent">I want to enable these manual transfers from PixelGuard to VirusTotal, as described above.</span></label>
+      <div class="vt-buttons">
+        <button type="button" id="vtEnable" data-i18n="vt_enable">Save and enable</button>
+        <button type="button" id="vtDisable" data-i18n="vt_disable">Disable</button>
+        <button type="button" id="vtDelete" data-i18n="vt_delete">Delete key and disable</button>
+      </div>
+      <p id="vtConfigStatus" role="status" aria-live="polite"></p>
+    </section>
 
     <section class="panel">
       <h2 data-i18n="options_supportTitle">Support the project</h2>
@@ -51,5 +78,6 @@
     </section>
 
     <script src="options.js"></script>
+    <script src="vt.js"></script>
   </body>
   </html>

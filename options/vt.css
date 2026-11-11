@@ -1,0 +1,11 @@
+#vtSettings h2 { margin-top:0; }
+#vtSettings p { line-height:1.5; }
+.vt-key-label { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.vt-key-saved { padding:2px 8px; border:1px solid var(--border); border-radius:12px; color:#b5c9c3; font-size:.85em; }
+#vtKey { display:block; box-sizing:border-box; width:100%; max-width:620px; margin-top:7px; padding:9px; color:var(--fg); background:#0f1316; border:1px solid var(--border); border-radius:6px; }
+.vt-consent { display:flex; gap:8px; align-items:flex-start; margin:16px 0; line-height:1.5; }
+.vt-consent input { margin-top:5px; flex-shrink:0; }
+.vt-buttons,.vt-links { display:flex; flex-wrap:wrap; gap:10px; }
+#vtSettings button:disabled { opacity:.5; cursor:default; }
+#vtSettings .muted { color:#b5c9c3; }
+#vtConfigStatus { min-height:1.5em; }
