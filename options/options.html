@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Settings</title>
+    <title data-i18n="options_title">Settings</title>
     <style>
       :root { --bg:#0b0d0f; --fg:#e6f1ef; --muted:#b5c9c3; --accent:#00e676; --danger:#e53935; --panel:#121517; --border:#2b363c; }
       html, body { background: var(--bg); color: var(--fg); }
@@ -15,6 +15,7 @@
       input[type=text], textarea { flex:1; padding:8px 10px; background:#0f1316; color:var(--fg); border:1px solid var(--border); border-radius:6px; }
       button { padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:#1a1f23; color:var(--fg); cursor:pointer; }
       button:hover { background:#22272b; }
+      select { padding:6px 8px; background:var(--panel); color:var(--fg); border:1px solid var(--border); border-radius:6px; font:inherit; }
       ul { list-style: none; padding: 0; margin: 8px 0 0; }
       li { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1f2a2f; }
       textarea { width:100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
@@ -25,13 +26,32 @@
   </head>
   <body>
     <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
-      <img src="../assets/logo-hero.png" alt="PixelGuard Logo" class="hero-logo" />
+      <img src="../assets/logo-hero.png" alt="PixelGuard" class="hero-logo" />
       <h1 data-i18n="options_title">Settings</h1>
     </div>
-
-
-
-
+    <section class="panel">
+      <label for="uiLanguage" data-i18n="options_language">PixelGuard language</label>
+      <select id="uiLanguage" disabled>
+        <option value="auto" data-i18n="options_languageAuto">Use Thunderbird’s language</option>
+        <option value="de" lang="de">Deutsch</option>
+        <option value="el" lang="el">Ελληνικά</option>
+        <option value="en" lang="en">English</option>
+        <option value="es" lang="es">Español</option>
+        <option value="fr" lang="fr">Français</option>
+        <option value="it" lang="it">Italiano</option>
+        <option value="ru" lang="ru">Русский</option>
+        <option value="zh_CN" lang="zh-CN">简体中文</option>
+      </select>
+      <p id="languageSaveError" role="alert" data-i18n="options_bannerSaveError" hidden></p>
+    </section>
+    <section class="panel" aria-labelledby="messageDisplayTitle">
+      <h2 id="messageDisplayTitle" data-i18n="options_messageDisplayTitle">Message display</h2>
+      <label class="row">
+        <input id="inlineBannerToggle" type="checkbox" disabled />
+        <span data-i18n="options_showInlineBanner">Show a compact notice in messages with possible tracking</span>
+      </label>
+      <p id="bannerSaveError" role="alert" data-i18n="options_bannerSaveError" hidden>Could not save this preference. Please try again.</p>
+    </section>
 
     <section class="panel" id="vtSettings" aria-labelledby="vtHeading">
       <h2 id="vtHeading">VirusTotal</h2>
@@ -77,6 +97,7 @@
       </div>
     </section>
 
+    <script src="../i18n.js"></script>
     <script src="options.js"></script>
     <script src="vt.js"></script>
   </body>

@@ -1,18 +1,10 @@
-/* global browser, messenger */
+/* global browser, messenger, PixelGuardI18n */
 (async function () {
   const API = (typeof browser !== 'undefined') ? browser : (typeof messenger !== 'undefined' ? messenger : null);
   const SECTION_LIMIT = 5;
 
-  function t(key, ...subs) {
-    try { return (API?.i18n?.getMessage(key, subs)) || key; } catch (_) { return key; }
-  }
-
-  function applyI18n() {
-    for (const el of document.querySelectorAll('[data-i18n]')) {
-      const key = el.getAttribute('data-i18n');
-      el.textContent = t(key);
-    }
-  }
+  const t = PixelGuardI18n.get;
+  const bindText = PixelGuardI18n.bindText;
 
   const suspCount = document.getElementById('suspCount');
   const extCount = document.getElementById('extCount');
@@ -28,12 +20,58 @@
   const openOptions = document.getElementById('openOptions');
 
   function labelFor(count, pluralKey, singularKey) {
-    return count === 1 ? t(singularKey) : t(pluralKey);
+    const locale = PixelGuardI18n.locale();
+    const form = new Intl.PluralRules(locale).select(count);
+    if (form === 'one') return t(singularKey);
+    if (form === 'few' && new Intl.Locale(locale).language === 'ru') return t(pluralKey + '_few');
+    return t(pluralKey);
   }
 
   function confidenceClass(value) {
     const normalized = String(value || 'low').toLowerCase();
     return ['high', 'medium', 'low'].includes(normalized) ? normalized : 'low';
+  }
+
+  // The scanner supplies locale-independent findings to the badge and message views.
+  const findingMessages = {
+    'visible remote image': 'reason_visibleRemote',
+    'tiny image': 'reason_tiny',
+    'explicit 1x1 image': 'reason_onePixel',
+    'explicit zero-size image': 'reason_zeroSize',
+    'display:none image': 'reason_displayNone',
+    'visibility:hidden image': 'reason_visibilityHidden',
+    'opacity:0 image': 'reason_opacityZero',
+    'recipient id with open path': 'reason_recipientAndOpen',
+    'recipient id parameter': 'reason_recipient',
+    'open path': 'reason_openPath',
+    'visible image with open path': 'reason_visibleOpen',
+    'tracking path and host keywords': 'reason_trackingPathAndHost',
+    'tracking path keyword': 'reason_trackingPath',
+    'tracking host keyword': 'reason_trackingHost',
+    'marketing campaign params only': 'reason_campaign',
+    'sender-owned host': 'reason_senderHost',
+    'image from alternate source attribute': 'reason_alternateSource',
+    'open tracking parameter': 'reason_openParameter',
+    'tracking link host with redirect path': 'reason_linkRedirectHost',
+    'tracking link host': 'reason_linkHost',
+    'tracking/redirect path': 'reason_redirectPath',
+    'tracking parameter': 'reason_trackingParameter',
+    'external link': 'reason_externalLink',
+    'external resource': 'reason_externalResource',
+    'tracking-pixel': 'reason_trackingPixel',
+    'suspicious-image': 'reason_suspiciousImage',
+    'external-image': 'reason_externalImage',
+    'tracking-link': 'reason_trackingLink'
+  };
+
+  function findingReason({ reason, classification }) {
+    if (Object.hasOwn(findingMessages, reason)) return t(findingMessages[reason]);
+    const combined = /^(.+) with (recipient id|open path)$/.exec(reason || '');
+    if (combined && Object.hasOwn(findingMessages, combined[1])) {
+      const key = combined[2] === 'recipient id' ? 'reason_withRecipient' : 'reason_withOpenPath';
+      return t(key, t(findingMessages[combined[1]]));
+    }
+    return t(Object.hasOwn(findingMessages, classification) ? findingMessages[classification] : 'popup_noDetails');
   }
 
   function compactUrl(raw) {
@@ -76,13 +114,16 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'copy-btn';
-    button.textContent = t('popup_copy');
+    let key = 'popup_copy';
+    const translate = () => t(key);
+    bindText(button, translate);
     button.addEventListener('click', async (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const copied = await copyUrl(item.url || '');
-      button.textContent = copied ? t('popup_copied') : t('popup_copyFailed');
-      setTimeout(() => { button.textContent = t('popup_copy'); }, 1300);
+      key = copied ? 'popup_copied' : 'popup_copyFailed';
+      button.textContent = translate();
+      setTimeout(() => { key = 'popup_copy'; button.textContent = translate(); }, 1300);
     });
     return button;
   }
@@ -105,7 +146,7 @@
     const confidence = document.createElement('span');
     const level = confidenceClass(item.confidence);
     confidence.className = `confidence ${level}`;
-    confidence.textContent = level;
+    bindText(confidence, () => t(`popup_confidence_${level}`));
 
     actions.appendChild(confidence);
     actions.appendChild(createCopyButton(item));
@@ -114,7 +155,7 @@
 
     const reason = document.createElement('div');
     reason.className = 'finding-reason';
-    reason.textContent = item.reason || item.classification || t('popup_noDetails');
+    bindText(reason, () => findingReason(item));
 
     const url = document.createElement('div');
     url.className = 'finding-url';
@@ -134,7 +175,7 @@
     const summary = document.createElement('summary');
     const label = document.createElement('span');
     label.className = 'section-title';
-    label.textContent = title;
+    bindText(label, () => t(title));
 
     const right = document.createElement('span');
     right.className = 'section-title';
@@ -166,7 +207,7 @@
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'show-more';
-        toggle.textContent = expanded ? t('popup_showLess') : t('popup_showAll', String(items.length));
+        bindText(toggle, () => expanded ? t('popup_showLess') : t('popup_showAll', String(items.length)));
         toggle.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
@@ -183,15 +224,15 @@
   function renderSections(findings) {
     detailsSections.textContent = '';
     const sections = [
-      { title: t('popup_suspicious'), items: findings.suspicious || [], open: (findings.suspicious || []).length > 0, type: 'suspicious' },
-      { title: t('popup_externalImages'), items: findings.externals || [], open: false, type: 'external' },
-      { title: t('popup_trackingLinks'), items: findings.links || [], open: false, type: 'links' }
+      { title: 'popup_suspicious', items: findings.suspicious || [], open: (findings.suspicious || []).length > 0, type: 'suspicious' },
+      { title: 'popup_externalImages', items: findings.externals || [], open: false, type: 'external' },
+      { title: 'popup_trackingLinks', items: findings.links || [], open: false, type: 'links' }
     ].filter(section => section.items.length > 0);
 
     if (sections.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-details';
-      empty.textContent = t('popup_noDetails');
+      bindText(empty, () => t('popup_noDetails'));
       detailsSections.appendChild(empty);
       return;
     }
@@ -199,23 +240,9 @@
     for (const section of sections) detailsSections.appendChild(createSection(section));
   }
 
-  let lastState = null;
-  let lastDomain = '';
-
-  applyI18n();
-
-  async function refreshState() {
-    try {
-      lastState = await API.runtime.sendMessage({ type: 'pg:getState' }) || {};
-    } catch (e) {
-      try {
-        const stored = await (API?.storage?.local?.get ? API.storage.local.get('settings') : Promise.resolve({}));
-        lastState = stored.settings || {};
-      } catch (_) {
-        lastState = {};
-      }
-    }
-  }
+  await PixelGuardI18n.ready;
+  PixelGuardI18n.translatePage(document);
+  PixelGuardI18n.onChange(() => PixelGuardI18n.translatePage(document));
 
   if (openOptions) {
     openOptions.addEventListener('click', (ev) => {
@@ -231,11 +258,9 @@
 
   async function refreshFindings() {
     try {
-      await refreshState();
       const res = await API.runtime.sendMessage({ type: 'pg:getFindings' });
       const f = res?.findings || { suspicious: [], externals: [], links: [] };
-      lastDomain = res?.domain || '';
-      senderDomEl.textContent = lastDomain || '-';
+      senderDomEl.textContent = res?.domain || '-';
 
       const s = f.suspicious.length, e = f.externals.length, l = f.links.length;
       if (suspCount) suspCount.textContent = String(s);
@@ -244,9 +269,9 @@
       if (sumS) sumS.textContent = String(s);
       if (sumE) sumE.textContent = String(e);
       if (sumL) sumL.textContent = String(l);
-      if (labS) labS.textContent = labelFor(s, 'popup_label_alerts', 'popup_label_alert');
-      if (labE) labE.textContent = labelFor(e, 'popup_label_images', 'popup_label_image');
-      if (labL) labL.textContent = labelFor(l, 'popup_label_links', 'popup_label_link');
+      if (labS) bindText(labS, () => labelFor(s, 'popup_label_alerts', 'popup_label_alert'));
+      if (labE) bindText(labE, () => labelFor(e, 'popup_label_images', 'popup_label_image'));
+      if (labL) bindText(labL, () => labelFor(l, 'popup_label_links', 'popup_label_link'));
       renderSections(f);
     } catch (e) {
       console.error('Error refreshing findings:', e);

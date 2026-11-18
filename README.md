@@ -9,7 +9,8 @@ PixelGuard is a Thunderbird extension that **reports** probable tracking pixels,
 ## What It Does
 - Scans the displayed message HTML to spot 1x1/hidden images, suspicious tracking parameters, and externally hosted assets that may leak engagement.
 - Uses confidence-based classification so normal visible images with marketing parameters are not automatically called tracking pixels.
-- Surfaces detections in a compact banner and popup with brief reasons for each item.
+- Open the PixelGuard panel to see the findings and the reason for each one. The toolbar badge updates when you open a message.
+- To also see a brief notice at the top of messages with tracking alerts, enable the inline banner in PixelGuard Settings. It is off by default, including after an update. The notice scrolls with the message.
 - Provides transparency only; remote content, images, fonts, and requests remain fully governed by Thunderbird's built-in remote-content controls.
 - Closing the inline banner keeps it dismissed for the current message. Rescans do not repeatedly count the same suspicious URL within that message view; opening another message starts a new view.
 - Inline CSS background URLs use the element's explicit size and visibility as detection evidence, like image elements.
@@ -39,14 +40,14 @@ The integration uses built-in Thunderbird APIs available in version 115. It requ
 1. Clone this repository and open the project folder.
 2. In Thunderbird, go to Tools > Add-ons and Themes > Debug Add-ons.
 3. Click "Load Temporary Add-on" and pick `manifest.json` from this project.
-4. Open an HTML email to see the PixelGuard banner with live detections.
+4. Open an HTML email, then click PixelGuard to inspect the findings.
 
-For development, use a separate Thunderbird profile and synthetic messages. See [local testing](docs/LOCAL-TESTING.md). Source publication and locally built packages do not establish that version 0.2.0 has been submitted to or approved by the Thunderbird store.
+For development, use a separate Thunderbird profile and synthetic messages. See the [0.2.1 banner regression tests](docs/BANNER-0.2.1.md) and the [0.2.0 local testing guide](docs/LOCAL-TESTING.md).
 
 ## Localization
-- UI follows Thunderbird's selected language automatically.
-- Included locales: English (US), English, Spanish, French, German, Greek, Russian, Chinese (Simplified).
-- The VirusTotal interface is translated in all included locales. Some existing tracking and general-settings labels are still in English.
+- PixelGuard follows Thunderbird's language by default. Choose a language in PixelGuard Settings to override it for this profile. Select the first option to follow Thunderbird again.
+- The selector offers English, German, Greek, Spanish, French, Italian, Russian and Simplified Chinese.
+- All eight languages cover the message summary, detection details, toolbar panel, VirusTotal lookups and settings.
 
 ## Privacy
 - Tracking analysis is local. If you enable VirusTotal, an explicit lookup sends the selected indicator and API key directly to VirusTotal over HTTPS. A file hash can identify a known file, and full URLs may contain private identifiers. See the complete [privacy notice](PRIVACY.md) and its [translations](docs/privacy/README.md).
