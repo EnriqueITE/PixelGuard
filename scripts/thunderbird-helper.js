@@ -11,7 +11,8 @@
       '<a href="https://example.invalid/normal">Normal</a><p>https://example.invalid/text.</p>'+
       '<img src="'+QA_ENDPOINT+'/resource/image.png" width="1" height="1">'+
       '<iframe src="'+QA_ENDPOINT+'/resource/frame"></iframe>'+
-      '<div style="background:url('+QA_ENDPOINT+'/resource/background.png)">Box</div></body></html>';
+      '<div style="background:url('+QA_ENDPOINT+'/resource/background.png)">Box</div>'+
+      '<p style="min-height:2400px">Synthetic newsletter body</p></body></html>';
     const inventory=PixelGuardVTInventory.collectLinks({contentType:'text/html',body:html});
     check('native_extension_DOMParser_inventory',inventory.links.length===2&&inventory.links.some(l=>l.url==='https://example.invalid/text'),inventory.links.map(l=>l.url));
     await new Promise(resolve=>setTimeout(resolve,700));
@@ -39,9 +40,24 @@
     const separate=await browser.messageDisplay.open({file,location:'window'});
     const displayed=await browser.messageDisplay.getDisplayedMessage(separate.id);
     check('standalone_message',!!displayed?.id,{tabId:separate.id,messageId:displayed?.id});
-    await browser.windows.remove(separate.windowId);
+    // Keep both message surfaces loaded for the production-extension DOM probe.
+    const ordinaryHtml = '<html><body><img width="400" height="200" src="'+
+      QA_ENDPOINT+'/resource/newsletter.jpg"><p style="min-height:2400px">Newsletter</p></body></html>';
+    const ordinary = new File([eml.replace(html, ordinaryHtml)
+      .replace('Message-ID: <pixelguard-runtime', 'Message-ID: <pixelguard-ordinary')],
+      'ordinary.eml', {type:'message/rfc822'});
+    const ordinaryTab = await browser.messageDisplay.open({file:ordinary,location:'tab',active:true});
+    check('ordinary_message_tab',!!ordinaryTab.id,{tabId:ordinaryTab.id});
+    if (QA_WIDGET_LANGUAGES) {
+      const cleanHtml = '<html><body><p>Local QA message</p><a href="https://example.invalid/docs">Docs</a></body></html>';
+      const cleanFile = new File([eml.replace(html, cleanHtml)
+        .replace('Message-ID: <pixelguard-runtime', 'Message-ID: <pixelguard-clean')],
+        'clean.eml', {type:'message/rfc822'});
+      const cleanTab = await browser.messageDisplay.open({file:cleanFile, location:'tab', active:true});
+      check('clean_message_tab', !!cleanTab.id, {tabId:cleanTab.id});
+    }
     await new Promise(resolve=>setTimeout(resolve,700));
-    await fetch(QA_ENDPOINT+'/result',{method:'POST',body:JSON.stringify({checks,note:'Public Thunderbird APIs with synthetic File; production inventory bytes in helper addon; no liveVT or UI permission grant.'})});
+    await fetch(QA_ENDPOINT+'/result',{method:'POST',body:JSON.stringify({checks,note:'Synthetic messages and files via public Thunderbird APIs. The QA helper runs the inventory locally.'})});
   } catch(e) {
     await fetch(QA_ENDPOINT+'/result',{method:'POST',body:JSON.stringify({checks,error:String(e),stack:e.stack})});
   }

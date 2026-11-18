@@ -1,8 +1,9 @@
-/* global browser */
+/* global browser, PixelGuardI18n */
 (() => {
   const DEFAULT_SETTINGS = {
     uiTheme: "hacker", // 'alert' (yellow) or 'hacker' (dark)
     debug: false,
+    showInlineBanner: false,
     trackingParams: [
       "uid", "token", "open", "track", "pixel", "beacon", "campaign_id",
       "recipient", "subscriber", "message_id", "signature", "rid", "cid",
@@ -38,7 +39,6 @@
       if (browser.messageDisplayScripts?.register) {
         await browser.messageDisplayScripts.register({
           js: [{ file: "content/scanner.js" }, { file: "content/scan.js" }],
-          css: [{ file: "content/banner.css" }],
         });
         registered = true;
         if (state.settings?.debug) console.log("[PG/bg] messageDisplayScripts.register OK");
@@ -58,6 +58,7 @@
   async function loadSettings() {
     const stored = await browser.storage.local.get("settings");
     state.settings = Object.assign({}, DEFAULT_SETTINGS, stored.settings || {});
+    state.settings.showInlineBanner = stored.settings?.showInlineBanner === true;
     state.tbMajor = await getTbMajor();
     const registered = await registerMessageScripts();
     if (state.settings?.debug) {
@@ -71,15 +72,22 @@
   }
 
   let settingsWrite = Promise.resolve();
-  let settingsRevision = 0;
   let settingsDirty = false;
-  function saveSettings() {
-    settingsDirty = true;
-    const revision = ++settingsRevision;
-    const snapshot = structuredClone(state.settings);
+  function saveSettings(update, keepUnsavedCount = false) {
     settingsWrite = settingsWrite.catch(() => {}).then(async () => {
-      await browser.storage.local.set({ settings: snapshot });
-      if (revision === settingsRevision) settingsDirty = false;
+      const next = update(state.settings);
+      try {
+        await browser.storage.local.set({ settings: next });
+      } catch (error) {
+        // A failed preference change is not applied. Counts must survive for retry.
+        if (keepUnsavedCount) {
+          state.settings = next;
+          settingsDirty = true;
+        }
+        throw error;
+      }
+      state.settings = next;
+      settingsDirty = false;
     });
     return settingsWrite;
   }
@@ -93,6 +101,15 @@
     } catch (_) {
       return "";
     }
+  }
+
+  async function updateOpenBanners() {
+    // The setting has already been saved; a closed window cannot undo it.
+    try {
+      const tabs = await browser.tabs.query({});
+      const message = { type: "pg:inlineBannerChanged", value: state.settings.showInlineBanner };
+      await Promise.allSettled(tabs.map(tab => browser.tabs.sendMessage(tab.id, message)));
+    } catch (_) {}
   }
 
   let badgeWrite = Promise.resolve();
@@ -136,6 +153,9 @@
 
   // Init
   const ready = loadSettings();
+  PixelGuardI18n.onChange(() => {
+    if (state.settings?.showInlineBanner) updateOpenBanners();
+  });
   try {
     browser.runtime.onInstalled.addListener(() => {
       registerMessageScripts();
@@ -192,11 +212,12 @@
           n++;
         }
       }
-      if (n > 0) {
-        state.settings.counters.totalDetected += n;
-      }
       if (n > 0 || settingsDirty) {
-        try { await saveSettings(); } catch (e) {
+        try {
+          await saveSettings(settings => ({
+            ...settings, counters: { ...settings.counters, totalDetected: settings.counters.totalDetected + n }
+          }), true);
+        } catch (e) {
           // Keep the in-memory total and retry persistence on the next scan.
           // A storage failure must not suppress the current findings/badge.
           if (state.settings?.debug) console.log("[PG/bg] counter persistence error:", String(e));
@@ -232,6 +253,17 @@
     switch (msg?.type) {
       case "pg:getState": {
         if (state.settings?.debug) console.log("[PG/bg] getState from", sender?.tab?.id);
+        if (state.settings.showInlineBanner && sender?.tab) {
+          await PixelGuardI18n.ready;
+          if (PixelGuardI18n.selected !== 'auto') {
+            return { ...state.settings, bannerText: {
+              lang: PixelGuardI18n.locale(),
+              label: PixelGuardI18n.get('banner_detected', '{count}'),
+              title: PixelGuardI18n.get('banner_ariaLabel'),
+              dismiss: PixelGuardI18n.get('banner_dismiss')
+            } };
+          }
+        }
         return state.settings;
       }
       case "pg:hello": {
@@ -285,14 +317,18 @@
       }
 
       case "pg:setDebug": {
-        state.settings.debug = !!msg.value;
-        await saveSettings();
+        await saveSettings(settings => ({ ...settings, debug: !!msg.value }));
         console.log("[PG/bg] debug:", state.settings.debug);
         return { ok: true, debug: state.settings.debug };
       }
+      case "pg:setInlineBanner": {
+        await saveSettings(settings => ({ ...settings, showInlineBanner: msg.value === true }));
+        await updateOpenBanners();
+        return { ok: true, showInlineBanner: state.settings.showInlineBanner };
+      }
       case "pg:export": {
-        const { uiTheme, debug, counters } = state.settings;
-        return { uiTheme, debug, counters };
+        const { uiTheme, debug, showInlineBanner, counters } = state.settings;
+        return { uiTheme, debug, showInlineBanner, counters };
       }
       case "pg:import": {
         try {
@@ -300,10 +336,11 @@
           const sanitized = {
             uiTheme: 'hacker',
             debug: !!incoming.debug,
+            showInlineBanner: incoming.showInlineBanner === true,
             counters: { totalDetected: incoming.counters?.totalDetected || 0 }
           };
-          state.settings = Object.assign({}, DEFAULT_SETTINGS, sanitized);
-          await saveSettings();
+          await saveSettings(() => ({ ...DEFAULT_SETTINGS, ...sanitized }));
+          await updateOpenBanners();
           return { ok: true };
         } catch (e) {
           return { ok: false, error: String(e) };

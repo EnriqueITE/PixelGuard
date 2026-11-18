@@ -7,7 +7,7 @@ import zipfile
 root = Path(__file__).resolve().parent.parent
 manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8-sig'))
 package = root / 'dist' / f"PixelGuard-{manifest['version']}.xpi"
-included = ['manifest.json', 'background.js', 'virustotal', 'assets', 'content', 'options', 'popup', '_locales', 'icons']
+included = ['manifest.json', 'background.js', 'i18n.js', 'virustotal', 'assets', 'content', 'options', 'popup', '_locales', 'icons']
 expected = {}
 for item in included:
     base = root / item

@@ -44,16 +44,16 @@ COPY = {
 MOCK = r"""
 const uiCalls = [];
 window.browser = {
-  i18n: { getMessage: (key, subs = []) => {
+  i18n: { getUILanguage: () => previewLanguage, getMessage: (key, subs = []) => {
     const entry = previewMessages[key]; if (!entry) return key;
     let value = entry.message;
     for (const [name, info] of Object.entries(entry.placeholders || {})) {
       const content = info.content.replace(/\$(\d+)/g, (_, n) => subs[Number(n) - 1] || '');
-      value = value.replaceAll('$' + name + '$', content);
+      value = value.replaceAll('$' + name.toUpperCase() + '$', content);
     }
     return value.replace(/\$(\d+)/g, (_, n) => subs[Number(n) - 1] || '');
   } },
-  storage: { onChanged: { addListener() {} } },
+  storage: { local: { get: async () => ({}) }, onChanged: { addListener() {} } },
   permissions: { onRemoved: { addListener() {} }, request: async () => false },
   runtime: {
     openOptionsPage: async () => {},
@@ -63,9 +63,9 @@ window.browser = {
       if (message.type === 'pg:getFindings') {
         const findings = { suspicious: [], externals: [], links: [] };
         if (previewScenario === 'overview') {
-          findings.suspicious.push({host:'metrics.example.com', url:'https://metrics.example.com/open/pixel.gif?id=demo',confidence:'high',reason:'Tiny external image (1 × 1) with a recipient identifier'});
-          findings.externals.push({host:'images.example.com',url:'https://images.example.com/newsletter-header.png',confidence:'low',reason:'Visible external image'});
-          findings.links.push({host:'news.example.com',url:'https://news.example.com/read?utm_source=newsletter',confidence:'medium',reason:'Link contains campaign tracking parameters'});
+          findings.suspicious.push({host:'metrics.example.com', url:'https://metrics.example.com/open/pixel.gif?id=demo',confidence:'high',reason:'explicit 1x1 image with recipient id'});
+          findings.externals.push({host:'images.example.com',url:'https://images.example.com/newsletter-header.png',confidence:'low',reason:'visible remote image'});
+          findings.links.push({host:'news.example.com',url:'https://news.example.com/read?utm_source=newsletter',confidence:'low',reason:'marketing campaign params only'});
         }
         return {domain:'example.com',findings};
       }
@@ -105,6 +105,7 @@ def generate(root, browser):
     work.mkdir(parents=True, exist_ok=True)
     for directory in ['popup', 'options', 'assets']:
         shutil.copytree(root / directory, work / directory, dirs_exist_ok=True)
+    shutil.copy2(root / 'i18n.js', work / 'i18n.js')
     startup = subprocess.STARTUPINFO() if os.name == 'nt' else None
     if startup:
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -119,11 +120,11 @@ def generate(root, browser):
             item_dir.mkdir(parents=True, exist_ok=True)
             source = (root / page_type / (page_type + '.html' if page_type == 'popup' else 'options.html')).read_text(encoding='utf-8')
             source = source.replace('<head>', '<head><base href="' + (work / page_type).as_uri() + '/">')
-            first_script = 'popup.js' if page_type == 'popup' else 'options.js'
+            first_script = '../i18n.js'
             mock_url = (item_dir / 'mock.js').as_uri()
             source = source.replace('<script src="' + first_script + '">', '<script src="' + mock_url + '"></script><script src="' + first_script + '">')
             (item_dir / 'ui.html').write_text(source, encoding='utf-8')
-            (item_dir / 'mock.js').write_text('const previewMessages=' + json.dumps(messages,ensure_ascii=False) + ';\nconst previewScenario=' + json.dumps(scenario) + ';\n' + MOCK,encoding='utf-8')
+            (item_dir / 'mock.js').write_text('const previewMessages=' + json.dumps(messages,ensure_ascii=False) + ';\nconst previewLanguage=' + json.dumps(lang) + ';\nconst previewScenario=' + json.dumps(scenario) + ';\n' + MOCK,encoding='utf-8')
             title, description, note = COPY[lang][scenario]
             frame = '''<!doctype html><html><head><meta charset="utf-8"><style>
               *{box-sizing:border-box} body{margin:0;background:#091410;color:#f1fff8;font-family:Segoe UI,Arial,sans-serif;width:1280px;height:960px;overflow:hidden}

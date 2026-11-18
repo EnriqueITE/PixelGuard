@@ -9,7 +9,7 @@
   let lastBanner = null;
   let debugEnabled = false;
   let dismissed = false;
-  let lastSignature = null;
+  let lastActivityCount = null;
   let currentMessageId = null;
   let contextVersion = 0;
   const ownedBanners = new WeakSet();
@@ -42,121 +42,61 @@
   function removeBanner() {
     if (lastBanner && lastBanner.isConnected) lastBanner.remove();
     lastBanner = null;
+    lastActivityCount = null;
   }
 
-  function formatItem(it) {
-    const host = it.host || "?";
-    const reason = it.reason ? ` [${it.confidence || "low"}: ${it.reason}]` : "";
-    const safe = (it.url || "").slice(0, 200);
-    return `${host}${reason} - ${safe}`;
-  }
-
-  function addFindingsSection(banner, title, items, limit = 20) {
-    if (!items || items.length === 0) return;
-    const wrap = document.createElement("div");
-    wrap.className = "pixelguard-extwrap";
-    const details = document.createElement("details");
-    details.className = "pixelguard-details";
-    const summary = document.createElement("summary");
-    const label = document.createElement("span");
-    label.className = "pg-accent";
-    label.textContent = title;
-    const badge = document.createElement("span");
-    badge.className = "pg-badge";
-    badge.textContent = String(items.length);
-    summary.appendChild(label);
-    summary.appendChild(document.createTextNode(" "));
-    summary.appendChild(badge);
-
-    const list = document.createElement("ul");
-    list.className = "pixelguard-list";
-    for (const it of items.slice(0, limit)) {
-      const li = document.createElement("li");
-      li.textContent = formatItem(it);
-      list.appendChild(li);
-    }
-    if (items.length > limit) {
-      const li = document.createElement("li");
-      li.textContent = `... +${items.length - limit} more`;
-      list.appendChild(li);
-    }
-    details.appendChild(summary);
-    details.appendChild(list);
-    wrap.appendChild(details);
-    banner.appendChild(wrap);
-  }
-
-  function renderBanner(findings) {
+  function renderBanner(activityCount, text) {
+    if (!document.body) return;
+    if (lastBanner?.isConnected && activityCount === lastActivityCount) return;
     removeBanner();
 
     const banner = document.createElement("div");
     ownedBanners.add(banner);
     banner.className = "pixelguard-banner";
     banner.setAttribute("role", "region");
-    banner.setAttribute("aria-label", t("banner_ariaLabel"));
+    banner.setAttribute("aria-label", text?.title || t("banner_ariaLabel"));
+    if (text?.lang) banner.setAttribute("lang", text.lang);
+    // The host stays in the normal reading flow, even if the email styles divs.
     banner.style.cssText = [
-      "position: sticky",
-      "top: 0",
-      "z-index: 2147483647",
-      "background: #0b0d0f",
-      "color: #e6f1ef",
-      "border: 1px solid #1f2a2f",
-      "border-left: 4px solid #00e676",
-      "border-radius: 8px",
-      "padding: 10px 12px",
-      "margin: 8px 0",
-      "box-shadow: 0 6px 18px rgba(0,0,0,0.35)"
+      "all: initial !important",
+      "position: static !important",
+      "display: flex !important",
+      "align-items: center !important",
+      "gap: 6px !important",
+      "box-sizing: border-box !important",
+      "width: max-content !important",
+      "max-width: 100% !important",
+      "padding: 2px 6px !important",
+      "margin: 0 0 4px !important",
+      "border-inline-start: 2px solid GrayText !important",
+      "background: Canvas !important",
+      "color: CanvasText !important",
+      "font: 13px/1.4 system-ui, sans-serif !important"
     ].join("; ");
 
-    const activityCount = findings.suspicious.length + findings.links.length;
-    const header = document.createElement("div");
-    header.className = "pg-header";
-    const left = document.createElement("div");
-    left.className = "pg-left";
-    const icon = document.createElement("span");
-    icon.className = "pg-icon";
-    icon.textContent = "PG";
-    const title = document.createElement("div");
-    const strongName = document.createElement("strong");
-    strongName.textContent = t("extensionName");
-    title.appendChild(strongName);
-    title.appendChild(document.createTextNode(`: ${t("banner_detected", String(activityCount))}`));
-    left.appendChild(icon);
-    left.appendChild(title);
+    // Keep email styles away from the label and the dismiss button.
+    const shadow = banner.attachShadow({ mode: "closed" });
+    const label = document.createElement("span");
+    label.textContent = t("extensionName") + ": " + (text ? text.label.replace('{count}', String(activityCount)) : t("banner_detected", String(activityCount)));
+    label.style.cssText = "min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis";
+    label.title = label.textContent;
     const closeBtn = document.createElement("button");
     closeBtn.className = "pg-close";
-    closeBtn.setAttribute("aria-label", t("banner_dismiss"));
-    closeBtn.textContent = "x";
+    closeBtn.type = "button";
+    closeBtn.title = text?.dismiss || t("banner_dismiss");
+    closeBtn.setAttribute("aria-label", closeBtn.title);
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = "flex: none; font: inherit; line-height: 1; min-width: 24px; min-height: 24px; cursor: pointer";
     closeBtn.addEventListener("click", () => {
       dismissed = true;
       removeBanner();
     });
-    header.appendChild(left);
-    header.appendChild(closeBtn);
-    banner.appendChild(header);
+    shadow.appendChild(label);
+    shadow.appendChild(closeBtn);
 
-    addFindingsSection(banner, t("banner_suspiciousImagesTitle"), findings.suspicious);
-    addFindingsSection(banner, t("banner_externalImagesTitle"), findings.externals);
-    addFindingsSection(banner, t("banner_trackingLinksTitle"), findings.links);
-
-    const actions = document.createElement("div");
-    actions.className = "pixelguard-actions";
-    const moreBtn = document.createElement("button");
-    moreBtn.className = "pixelguard-btn primary";
-    moreBtn.style.borderRadius = "6px";
-    moreBtn.style.border = "1px solid #0b7";
-    moreBtn.style.padding = "6px 10px";
-    moreBtn.style.background = "#0c8";
-    moreBtn.style.color = "#082017";
-    moreBtn.style.cursor = "pointer";
-    moreBtn.textContent = t("banner_moreInfo");
-    moreBtn.addEventListener("click", () => API.runtime.openOptionsPage());
-    actions.appendChild(moreBtn);
-    banner.appendChild(actions);
-
-    const host = document.body || document.documentElement;
-    host.insertBefore(banner, host.firstChild);
+    document.body.insertBefore(banner, document.body.firstChild);
     lastBanner = banner;
+    lastActivityCount = activityCount;
   }
 
   function throttle(fn, wait) {
@@ -171,16 +111,19 @@
     const version = contextVersion;
     const st = await (API?.runtime?.sendMessage ? API.runtime.sendMessage({ type: "pg:getState" }) : Promise.resolve({}));
     if (version !== contextVersion) return;
-    const debug = !!st?.debug;
-    debugEnabled = debug;
+    const showBanner = st?.showInlineBanner === true && !dismissed;
+    debugEnabled = !!st?.debug;
+    if (!showBanner) {
+      removeBanner();
+      // The background independently computes the popup, badge and counters.
+      if (!debugEnabled) return;
+    }
     debugLog("[PG/cs] scanning...");
     const findings = scan(document);
     debugLog("[PG/cs] results", findings);
-    if (dismissed) return;
-    const signature = JSON.stringify([findings, debug]);
-    if (signature === lastSignature && lastBanner?.isConnected) return;
-    lastSignature = signature;
-    if (findings.suspicious.length > 0 || findings.externals.length > 0 || findings.links.length > 0 || debug) renderBanner(findings); else removeBanner();
+    const activityCount = findings.suspicious.length + findings.links.length;
+    if (showBanner && activityCount > 0) renderBanner(activityCount, st.bannerText);
+    else removeBanner();
   }, THROTTLE_MS);
 
   const mo = new MutationObserver(records => {
@@ -195,10 +138,15 @@
   mo.observe(document, { childList: true, subtree: true });
 
   (API?.runtime || browser.runtime).onMessage.addListener((msg) => {
+    if (msg?.type === "pg:inlineBannerChanged") {
+      contextVersion++;
+      removeBanner();
+      if (msg.value === true) doScan();
+      return;
+    }
     if (msg?.type === "pg:context") {
       if (msg.messageId != null && currentMessageId != null && msg.messageId !== currentMessageId) {
         dismissed = false;
-        lastSignature = null;
         removeBanner();
       }
       currentMessageId = msg.messageId ?? currentMessageId;

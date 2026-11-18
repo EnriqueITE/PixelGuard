@@ -94,7 +94,7 @@
         const collected = inventory.collectLinks(full, deps.parseHTML);
         for (const item of collected.links) session.items.set(item.id, { ...item, type: 'link' });
         const files = attachments.map((file, index) => {
-          const item = { id: `file-${index}`, name: file.name || 'attachment', size: file.size, partName: file.partName, type: 'file' };
+          const item = { id: `file-${index}`, name: file.name || '', size: file.size, partName: file.partName, type: 'file' };
           session.items.set(item.id, item);
           return { id: item.id, name: item.name, size: item.size };
         });

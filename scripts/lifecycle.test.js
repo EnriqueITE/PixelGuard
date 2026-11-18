@@ -33,7 +33,7 @@ function clock() {
   };
 }
 
-function contentHarness() {
+function contentHarness(settings = {}) {
   const time = clock();
   let observer, queued = false, records = [], onContext, scans = 0;
   const messages = [];
@@ -53,6 +53,9 @@ function contentHarness() {
     }
     get isConnected() { return this === doc.body || !!this.parentNode?.isConnected; }
     get firstChild() { return this.children[0] || null; }
+    attachShadow() { this.testShadow = new Node('#shadow-root'); return this.testShadow; }
+    append(...nodes) { nodes.forEach(n => this.appendChild(n)); }
+    get textContent() { return this.nodeValue ?? this.children.map(child => child.textContent).join(''); }
     setAttribute(k, v) { this.attrs[k] = String(v); }
     getAttribute(k) { return this.attrs[k] || ''; }
     addEventListener(k, fn) { this.events[k] = fn; }
@@ -108,8 +111,8 @@ function contentHarness() {
     URL, console, document: doc, window: { addEventListener() {} },
     ...time, NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 },
     MutationObserver: class { constructor(fn) { observer = fn; } observe() {} },
-    browser: { i18n: { getMessage: key => key }, runtime: {
-      sendMessage: async msg => { messages.push(msg); return msg.type === 'pg:hello' ? { ok: false } : {}; },
+    browser: { i18n: { getMessage: (key, subs) => key === 'banner_detected' ? subs.join(' ') + ' alerts' : key }, runtime: {
+      sendMessage: async msg => { messages.push(msg); return msg.type === 'pg:hello' ? { ok: true, settings } : settings; },
       onMessage: { addListener: fn => { onContext = fn; } }
     } }
   });
@@ -123,26 +126,45 @@ function contentHarness() {
     nodes: () => all(doc.body), scanner: context.PixelGuardScanner };
 }
 
-test('static message settles; own banner URLs are not rescanned as links', async () => {
-  const h = contentHarness();
+test('opening a tracked message only inserts a notice with an explicit opt-in', async () => {
+  for (const settings of [{}, { showInlineBanner: false }, { showInlineBanner: 'true' }, { debug: true }]) {
+    const h = contentHarness(settings);
+    await h.time.advance(5000);
+    assert.equal(h.doc.body.children.length, 1, 'Original message remains the only content');
+    assert.equal(h.banner(), undefined);
+  }
+});
+
+test('opt-in ignores ordinary external images and still responds to tracking links', async () => {
+  const h = contentHarness({ showInlineBanner: true });
+  const logo = h.doc.body.firstChild;
+  Object.assign(logo.attrs, { src: 'https://cdn.vendor.invalid/logo.png', width: '250', height: '80' });
+  await h.time.advance(5000);
+  assert.equal(h.banner(), undefined);
+  h.doc.body.appendChild(h.doc.createTextNode('Visit https://click.vendor.invalid/path?uid=abc'));
+  await h.time.advance(500);
+  assert.match(h.banner().testShadow.textContent, /1 alerts/);
+});
+
+test('static message settles and an unchanged count preserves the compact notice', async () => {
+  const h = contentHarness({ showInlineBanner: true });
   await h.time.advance(5000);
   assert.ok(h.scans() <= 3, `Unexpected rescans: ${h.scans()}`);
   assert.equal(h.time.timers.size, 0);
   assert.ok(h.banner());
   assert.equal(h.messages.filter(m => m.type === 'pg:detectedCount').length, 0);
-  // One suspicious section only: the displayed pixel URL must not become a tracking-link section.
-  assert.equal(h.nodes().filter(n => n.className === 'pixelguard-extwrap').length, 1);
+  assert.match(h.banner().testShadow.textContent, /1 alerts/);
   const first = h.banner();
   h.doc.body.appendChild(h.doc.createTextNode('ordinary message update'));
   await h.time.advance(500);
-  assert.equal(h.banner(), first, 'Unchanged findings preserve expanded details');
+  assert.equal(h.banner(), first, 'Unchanged count preserves the notice');
 });
 
 test('dismissal survives mutations/repeated context, resets for another message', async () => {
-  const h = contentHarness();
+  const h = contentHarness({ showInlineBanner: true });
   h.context({ type: 'pg:context', domain: 'example.com', messageId: 1 });
   await h.time.advance(2500);
-  h.nodes().find(n => n.className === 'pg-close').events.click();
+  h.banner().testShadow.children.find(n => n.tagName === 'button').events.click({ stopPropagation() {}, preventDefault() {} });
   h.image('https://vendor.invalid/new.gif');
   h.context({ type: 'pg:context', domain: 'example.com', messageId: 1 });
   await h.time.advance(1000);
@@ -154,7 +176,7 @@ test('dismissal survives mutations/repeated context, resets for another message'
 });
 
 test('message-authored banner class does not bypass detection; new content rescans', async () => {
-  const h = contentHarness();
+  const h = contentHarness({ showInlineBanner: true });
   await h.time.advance(2500);
   const before = h.scans();
   const lookalike = h.doc.createElement('div'); lookalike.className = 'pixelguard-banner';
@@ -163,12 +185,12 @@ test('message-authored banner class does not bypass detection; new content resca
   lookalike.appendChild(image); h.doc.body.appendChild(lookalike);
   await h.time.advance(1000);
   assert.equal(h.scans(), before + 1);
-  const counts = h.nodes().filter(n => n.className === 'pg-badge');
-  assert.equal(counts[0].children[0].nodeValue, '2');
+  const owned = h.doc.body.children.find(n => n.testShadow);
+  assert.match(owned.testShadow.textContent, /2 alerts/);
 });
 
 test('duplicate script injection does not create competing banners or observers', async () => {
-  const h = contentHarness(); h.injectAgain();
+  const h = contentHarness({ showInlineBanner: true }); h.injectAgain();
   await h.time.advance(5000);
   assert.ok(h.scans() <= 3);
   assert.equal(h.doc.body.children.filter(n => n.className === 'pixelguard-banner').length, 1);
@@ -176,10 +198,10 @@ test('duplicate script injection does not create competing banners or observers'
 });
 
 test('ordinary URL text remains detected outside the excluded banner', async () => {
-  const h = contentHarness();
+  const h = contentHarness({ showInlineBanner: true });
   h.doc.body.appendChild(h.doc.createTextNode('Visit https://click.vendor.invalid/path?uid=abc'));
   await h.time.advance(2500);
-  assert.equal(h.nodes().filter(n => n.className === 'pixelguard-extwrap').length, 2);
+  assert.match(h.banner().testShadow.textContent, /2 alerts/);
 });
 
 function backgroundHarness(overrides = {}) {
@@ -204,12 +226,13 @@ function backgroundHarness(overrides = {}) {
       badges.push(d);
     }, setBadgeBackgroundColor: async () => {} },
     tabs: { sendMessage: overrides.sendContext || (async (id, msg) => { contexts.push({ id, msg }); }),
-      query: async () => [{ id: 7 }], onRemoved: { addListener: fn => { close = fn; } } },
+      query: overrides.queryTabs || (async () => [{ id: 7 }]), onRemoved: { addListener: fn => { close = fn; } } },
     messageDisplay: { onMessageDisplayed: { addListener: fn => { display = fn; } },
       getDisplayedMessage: overrides.getDisplayed || (async () => current) },
     messages: { getFull: overrides.getFull || (async id => ({ contentType: 'text/html', body: String(id) })) }
   };
   const context = vm.createContext({ browser, console, structuredClone, ...time,
+    PixelGuardI18n: { selected: 'auto', onChange() {} },
     PixelGuardScanner: { scanHtml: html => ({ suspicious: [{ url: `https://vendor.invalid/${html}` }], externals: [], links: [] }) } });
   load('background.js', context);
   return { time, writes, badges, contexts, registrations,
@@ -224,8 +247,7 @@ test('background registers its banner scripts once using Thunderbird 115 options
   await flush();
   assert.equal(h.registrations.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(h.registrations[0])), {
-    js: [{ file: 'content/scanner.js' }, { file: 'content/scan.js' }],
-    css: [{ file: 'content/banner.css' }]
+    js: [{ file: 'content/scanner.js' }, { file: 'content/scan.js' }]
   });
   await h.show();
   assert.equal(h.registrations.length, 1);
@@ -352,4 +374,51 @@ test('failed counter persistence retries without double-counting or hiding badge
   await h.send({ type: 'pg:rescanNow' });
   assert.equal(attempts, 2);
   assert.equal((await h.send({ type: 'pg:getState' })).counters.totalDetected, 1);
+});
+
+test('upgrades and legacy imports leave the message notice off unless explicitly enabled', async () => {
+  const h = backgroundHarness({ getSettings: async () => ({ settings: { debug: false, counters: { totalDetected: 12 } } }) });
+  assert.equal((await h.send({ type: 'pg:getState' })).showInlineBanner, false);
+  await h.send({ type: 'pg:setInlineBanner', value: true });
+  const backup = await h.send({ type: 'pg:export' });
+  assert.equal(backup.showInlineBanner, true);
+  assert.equal(backup.counters.totalDetected, 12);
+  await h.send({ type: 'pg:import', payload: { counters: { totalDetected: 3 } } });
+  assert.equal((await h.send({ type: 'pg:hello' })).settings.showInlineBanner, false);
+  await h.send({ type: 'pg:import', payload: backup });
+  assert.equal(h.writes.at(-1).settings.showInlineBanner, true);
+  assert.equal(h.writes.at(-1).settings.counters.totalDetected, 12);
+  assert.deepEqual(h.contexts.map(c => [c.msg.type, c.msg.value]), [
+    ['pg:inlineBannerChanged', true], ['pg:inlineBannerChanged', false], ['pg:inlineBannerChanged', true]
+  ]);
+});
+
+test('a failed banner or import write cannot be saved later by a concurrent scan', async () => {
+  const pending = deferred(); let attempts = 0;
+  const h = backgroundHarness({ setSettings: async () => {
+    if (++attempts === 1) await pending.promise;
+    if (attempts === 2) throw new Error('storage unavailable');
+  } });
+  const preference = h.send({ type: 'pg:setInlineBanner', value: true });
+  await flush();
+  const imported = h.send({ type: 'pg:import', payload: { showInlineBanner: true, counters: { totalDetected: 123 } } });
+  const scan = h.show();
+  await flush();
+  assert.equal((await h.send({ type: 'pg:getState' })).showInlineBanner, false);
+  pending.reject(new Error('storage unavailable'));
+  assert.equal((await preference).ok, false);
+  assert.equal((await imported).ok, false);
+  assert.equal((await scan).ok, true);
+  assert.equal(h.writes.length, 1);
+  assert.equal(h.writes[0].settings.showInlineBanner, false);
+  assert.equal(h.writes[0].settings.counters.totalDetected, 1);
+  assert.ok(!h.contexts.some(c => c.msg.type === 'pg:inlineBannerChanged'));
+});
+
+test('a saved banner preference remains active even if tab notification fails', async () => {
+  const h = backgroundHarness({ queryTabs: async () => { throw new Error('Window closed'); } });
+  const result = await h.send({ type: 'pg:setInlineBanner', value: true });
+  assert.equal(result.ok, true);
+  assert.equal((await h.send({ type: 'pg:hello' })).settings.showInlineBanner, true);
+  assert.equal(h.writes.at(-1).settings.showInlineBanner, true);
 });

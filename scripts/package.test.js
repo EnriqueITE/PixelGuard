@@ -5,7 +5,7 @@ const test = require('node:test');
 const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 
 test('release manifest uses only expected public permissions and bundled background scripts', () => {
-  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.version, '0.2.2');
   assert.equal(manifest.manifest_version, 2);
   assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '115.0');
   assert.equal(manifest.experiment_apis, undefined);
@@ -22,7 +22,7 @@ function files(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(dir, entry.name)) : [path.join(dir, entry.name)]);
 }
 test('bundled source has no Experiments, remote scripts, iframe or dynamic code execution', () => {
-  for (const file of ['background.js', ...['virustotal', 'content', 'options', 'popup'].flatMap(files)]) {
+  for (const file of ['background.js', 'i18n.js', ...['virustotal', 'content', 'options', 'popup'].flatMap(files)]) {
     if (!/\.(js|html)$/.test(file)) continue;
     const source = fs.readFileSync(file, 'utf8');
     assert.doesNotMatch(source, /\b(?:eval\s*\(|new\s+Function\s*\(|ChromeUtils\.|Components\.|experiment_apis)/, file);
@@ -41,5 +41,19 @@ test('all bundled locales provide the VT UI messages and required substitutions'
       const slots = s => [...s.matchAll(/\$[1-9]/g)].map(m => m[0]).sort();
       assert.deepEqual(slots(messages[key].message), slots(canonical[key].message), `${locale}: ${key} substitutions`);
     }
+  }
+});
+
+test('the compact inline notice is localized and can report its alert count', () => {
+  const english = JSON.parse(fs.readFileSync('_locales/en/messages.json', 'utf8'));
+  for (const locale of fs.readdirSync('_locales')) {
+    const messages = JSON.parse(fs.readFileSync(`_locales/${locale}/messages.json`, 'utf8'));
+    for (const key of ['banner_detected', 'banner_ariaLabel', 'banner_dismiss']) {
+      assert.ok(messages[key]?.message, `${locale}: ${key}`);
+      if (locale.startsWith('en')) assert.deepEqual(messages[key], english[key]);
+      else assert.notEqual(messages[key].message, english[key].message, `${locale}: ${key} still in English`);
+    }
+    assert.match(messages.banner_detected.message, /\$COUNT\$/);
+    assert.equal(messages.banner_detected.placeholders.count.content, '$1');
   }
 });

@@ -29,7 +29,7 @@ Your key is stored locally, without synchronization. Local storage is not an enc
 
 VirusTotal's account limits and terms apply, including restrictions on the public API. Your own key does not waive those restrictions. PixelGuard requests existing information; it does not submit files or URLs for new scans or request reanalysis. Neither a missing report nor zero detections guarantees safety. VirusTotal results do not change PixelGuard's tracking alerts or counters.
 
-The VirusTotal interface is translated into English, Spanish, German, French, Greek, Russian and Simplified Chinese. Some older tracking and general-settings labels remain in English. Requires Thunderbird 115 or later. PixelGuard is an independent project and does not claim endorsement by VirusTotal.
+PixelGuard is an independent project and does not claim endorsement by VirusTotal.
 
 ## Español: descripción breve
 
@@ -58,7 +58,7 @@ La clave se guarda localmente, sin sincronización. Ese almacenamiento no es una
 
 Se aplican los límites y las condiciones de tu cuenta de VirusTotal, incluidas las restricciones de la API pública. Utilizar tu propia clave no elimina esas restricciones. PixelGuard consulta información existente: no envía archivos o URLs para nuevos análisis ni solicita reanálisis. La ausencia de un informe o cero detecciones no garantizan que algo sea seguro. Los resultados de VirusTotal no cambian las alertas ni los contadores de rastreo de PixelGuard.
 
-La interfaz de VirusTotal está traducida al español, inglés, alemán, francés, griego, ruso y chino simplificado. Algunos textos antiguos de detección y ajustes generales siguen en inglés. Requiere Thunderbird 115 o posterior. PixelGuard es un proyecto independiente y no afirma contar con el respaldo de VirusTotal.
+PixelGuard es un proyecto independiente y no afirma contar con el respaldo de VirusTotal.
 
 ## English (US): version 0.2.0 release notes
 
