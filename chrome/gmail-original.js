@@ -2,6 +2,7 @@
 (() => {
   const SOURCE_LIMIT = 8 * 1024 * 1024;
   const HEX_ID = /^[\da-f]{1,16}$/i;
+  const MAILBOX_HINT = /^[\da-f]{8,32}$/i;
   const PERM_ID = /^(?:msg-f:\d{1,20}|msg-a:[\w-]{1,64})$/;
   const MESSAGE_WRAPPER = '[data-legacy-message-id], [data-message-id]';
   function accountPath(page) {
@@ -31,10 +32,9 @@
   function sourceLinkHint(account, id, permId) {
     // Reuse Gmail's mailbox hint only when it is already in this account's
     // address bar or an original-message link for this specific message.
-    const validHint = /^[a-zA-Z0-9_-]{1,64}$/;
     const own = new URL(location.href);
     const hint = own.searchParams.get('ik') || '';
-    if (validHint.test(hint)) return hint;
+    if (MAILBOX_HINT.test(hint)) return hint;
     for (const anchor of document.querySelectorAll('a[href*="ik="][href*="view="]')) {
       if (anchor.closest('.a3s, .pixelguard-gmail, [role="textbox"], [contenteditable]')) continue;
       let url;
@@ -45,7 +45,7 @@
       if (view !== 'om' && !(view === 'att' && params.get('attid') === '0' && params.get('disp') === 'comp')) continue;
       if (params.has('permmsgid') ? params.get('permmsgid') !== permId : params.get('th') !== id) continue;
       const value = params.get('ik') || '';
-      if (validHint.test(value)) return value;
+      if (MAILBOX_HINT.test(value)) return value;
     }
     return '';
   }
@@ -91,30 +91,48 @@
   async function read(id, signal, manual = false, body) {
     const account = accountPath(location);
     if (!account || typeof id !== 'string' || !(HEX_ID.test(id) || PERM_ID.test(id))) throw Error('Invalid Gmail message');
-    if (body && (!body.isConnected || messageId(body) !== id)) throw Error('Gmail message changed');
     const legacy = HEX_ID.test(id);
     const nativeId = permanentId(body?.parentElement?.closest(MESSAGE_WRAPPER));
     const permId = nativeId || (legacy ? 'msg-f:' + BigInt('0x' + id).toString() : id);
+    function checkCurrent() {
+      if (signal?.aborted) throw Error('Gmail read cancelled');
+      if (accountPath(location) !== account || (body && (!body.isConnected || messageId(body) !== id ||
+          permanentId(body.parentElement?.closest(MESSAGE_WRAPPER)) !== nativeId))) throw Error('Gmail message changed');
+    }
+    checkCurrent();
     const base = location.origin + account + '/?';
     // A manual retry uses Gmail's permanent message ID, including when it
     // differs from the legacy identifier used by the automatic download.
     const param = manual || !legacy ? 'permmsgid=' + permId : 'th=' + id;
-    const hint = manual ? sourceLinkHint(account, id, permId) : '';
+    let hint = manual ? sourceLinkHint(account, id, permId) : '';
+    if (manual && !hint) {
+      try {
+        const reply = await globalThis.chrome?.runtime?.sendMessage({type: 'pg:gmail:mailboxHint'});
+        if (reply?.ok && typeof reply.hint === 'string' && MAILBOX_HINT.test(reply.hint)) hint = reply.hint;
+      } catch { /* The same-account, hint-free download still works for some messages. */ }
+      checkCurrent();
+    }
     const suffix = hint ? '&ik=' + hint : '';
     const download = base + 'view=att&' + param + '&attid=0&disp=comp&safe=1&zw' + suffix;
-    let source;
-    try {
-      source = await readSource(download, signal, false);
-    } catch (error) {
-      if (signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
+    async function getOriginal(useView) {
+      if (!useView) return readSource(download, signal, false);
       const page = await readSource(base + 'view=om&permmsgid=' + permId + suffix, signal, true);
       // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
       const template = document.implementation.createHTMLDocument('').createElement('template');
       template.innerHTML = new TextDecoder('utf-8').decode(page);
       const raw = template.content.querySelectorAll('pre.raw_message_text');
       if (raw.length !== 1) throw Error('Gmail original unavailable');
-      source = raw[0].textContent;
+      return raw[0].textContent;
     }
+    let source;
+    try {
+      source = await getOriginal(Boolean(hint));
+    } catch (error) {
+      if (signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
+      checkCurrent();
+      source = await getOriginal(!hint);
+    }
+    checkCurrent();
     return PixelGuardOriginalMime.html(source);
   }
 

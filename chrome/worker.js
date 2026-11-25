@@ -160,17 +160,41 @@ async function updateBadge(tabId, { suspicious, externals, links }) {
   return { ok: true };
 }
 
+async function mailboxHint(sender) {
+  const path = new URL(sender.url).pathname;
+  if (!/^\/mail\/u\/\d+\/?$/.test(path)) return fail('unauthorized');
+  const target = {tabId: sender.tab.id};
+  if (sender.documentId) target.documentIds = [sender.documentId];
+  else target.frameIds = [0];
+  const [injection] = await chrome.scripting.executeScript({
+    target, world: 'MAIN', args: [path],
+    func: expectedPath => {
+      if (location.origin !== 'https://mail.google.com' || location.pathname !== expectedPath) return '';
+      // This one field is the mailbox identifier on Gmail's original-message URLs.
+      const hint = window.GLOBALS?.[9];
+      return typeof hint === 'string' && /^[a-f\d]{8,16}$/i.test(hint) ? hint : '';
+    }
+  });
+  const hint = injection?.result;
+  if (injection?.frameId !== 0 || (sender.documentId && injection.documentId !== sender.documentId)) return {ok: true, hint: ''};
+  return {ok: true, hint: typeof hint === 'string' && /^[a-f\d]{8,16}$/i.test(hint) ? hint : ''};
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup'].includes(msg?.type)) return false;
+  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup', 'pg:gmail:mailboxHint'].includes(msg?.type)) return false;
   const fromPopup = sender.url === chrome.runtime.getURL('popup.html');
   const fromGmail = sender.frameId === 0 && Number.isInteger(sender.tab?.id) && sender.tab.id >= 0 &&
     sender.url?.startsWith('https://mail.google.com/mail/');
-  if (msg.type === 'pg:badge') {
+  if (msg.type === 'pg:badge' || msg.type === 'pg:gmail:mailboxHint') {
     if (!fromGmail || sender.id !== chrome.runtime.id || (sender.documentLifecycle && sender.documentLifecycle !== 'active')) {
       reply(fail('unauthorized'));
       return false;
     }
-    updateBadge(sender.tab.id, msg).then(reply, () => reply(fail('unavailable')));
+    if (msg.type === 'pg:gmail:mailboxHint') {
+      mailboxHint(sender).then(reply, () => reply({ok: true, hint: ''}));
+    } else {
+      updateBadge(sender.tab.id, msg).then(reply, () => reply(fail('unavailable')));
+    }
     return true;
   }
   if (sender.id !== chrome.runtime.id || !(fromPopup || (msg.type === 'pg:panel' && fromGmail))) {

@@ -13,6 +13,9 @@ const delayedId = '18b3e19bf9f5ab03';
 const nativeId = '18b3e19bf9f5ab04';
 const threadIds = ['18b3e19bf9f5ab05', '18b3e19bf9f5ab06', '18b3e19bf9f5ab07'];
 const unavailableId = '18b3e19bf9f5ab08';
+const hintedId = '18b3e19bf9f5ab09';
+const hintedKey = 'msg-f:' + BigInt('0x' + hintedId);
+const syntheticHint = 'a012345678';
 const pixel = 'https://mail.shop.app/_t/open/synthetic-test-image';
 const click = 'https://mail.shop.app/_t/c/v3/UUE=';
 const image = 'https://assets.example.test/product.png';
@@ -95,8 +98,12 @@ async function main() {
       if (url.pathname === '/mail/u/1/' && url.searchParams.get('view') === 'om') {
         if (request.isNavigationRequest()) return route.fulfill({contentType: 'text/html', body: originalView});
         const id = url.searchParams.get('permmsgid');
-        sourceViewRequests.push({id, method: request.method()});
-        if (id !== 'msg-f:' + BigInt('0x' + nativeId)) return route.fulfill({status: 503, body: 'Unavailable'});
+        const hint = url.searchParams.get('ik');
+        sourceViewRequests.push({id, method: request.method(), ...(hint && {hint})});
+        const hintedView = id === hintedKey && hint === syntheticHint;
+        if (id !== 'msg-f:' + BigInt('0x' + nativeId) && !hintedView) {
+          return route.fulfill({status: 503, body: 'Unavailable'});
+        }
         return route.fulfill({contentType: 'text/html', body: '<img src="' + image + '">' + originalView});
       }
       if (url.searchParams.get('view') === 'att') {
@@ -267,6 +274,34 @@ async function main() {
     assert.equal(page.url(), initialUrl);
     assert.equal(await page.locator('#message-menu').isVisible(), false);
     assert.equal(await page.locator('body').getAttribute('data-display-images-clicked'), null);
+    // Some Gmail accounts require the account hint for the source view. No
+    // hint is published in the DOM here; only the Gmail page world has it.
+    const automaticFallback = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.searchParams.get('view') === 'om' && url.searchParams.get('permmsgid') === hintedKey;
+    });
+    await page.locator('.adn').evaluate((el, {id, hint}) => {
+      window.GLOBALS = [];
+      window.GLOBALS[9] = hint;
+      el.dataset.legacyMessageId = id;
+      el.dataset.messageId = '#msg-f:' + BigInt('0x' + id);
+    }, {id: hintedId, hint: syntheticHint});
+    await automaticFallback;
+    await fullScan.waitFor();
+    assert.equal(await panel.getAttribute('open'), null);
+    await fullScan.click();
+    await panel.getByText('Full scan complete', {exact: true}).waitFor();
+    assert.deepEqual(sourceViewRequests.filter(req => req.id === hintedKey), [
+      {id: hintedKey, method: 'GET'},
+      {id: hintedKey, method: 'GET', hint: syntheticHint}
+    ]);
+    assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
+    await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    assert.doesNotMatch(await panel.innerText(), new RegExp(syntheticHint));
+    assert.equal(unexpectedPages.length, 0);
+    assert.equal(page.url(), initialUrl);
+    assert.equal(await page.locator('#message-menu').isVisible(), false);
+    await page.evaluate(() => { delete window.GLOBALS; });
     const requestsBeforeThread = originalRequests.length;
 
     // Three messages expand together; the third collapses while the first two

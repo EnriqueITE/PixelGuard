@@ -4,9 +4,9 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function harness(location, fetch, anchors = []) {
-  const document = { querySelectorAll: () => anchors };
-  const context = vm.createContext({ location, fetch, document, URL, Uint8Array, TextDecoder, atob });
+function harness(location, fetch, anchors = [], runtime, implementation) {
+  const document = { querySelectorAll: () => anchors, implementation };
+  const context = vm.createContext({ location, fetch, document, chrome: {runtime}, URL, Uint8Array, TextDecoder, atob });
   for (const file of ['original-mime.js', 'gmail-original.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
   }
@@ -101,17 +101,17 @@ test('only forwards an existing Gmail mailbox hint from this message on the same
   const native = '?view=om&permmsgid=' + permId;
   const anchor = (href, inBody = false) => ({ getAttribute: () => href, closest: () => inBody ? {} : null });
   const anchors = [
-    anchor(native + '&ik=sender', true),
-    anchor('https://example.test/mail/u/2/' + native + '&ik=external'),
-    anchor('/mail/u/1/' + native + '&ik=otherAccount'),
-    anchor('?view=om&permmsgid=msg-f:42&ik=otherMessage'),
+    anchor(native + '&ik=0000000011', true),
+    anchor('https://example.test/mail/u/2/' + native + '&ik=0000000022'),
+    anchor('/mail/u/1/' + native + '&ik=0000000033'),
+    anchor('?view=om&permmsgid=msg-f:42&ik=0000000044'),
     anchor(native + '&ik=safe%26extra%3Dwrong'),
-    anchor(native + '&ik=fromGmail&extra=ignored')
+    anchor(native + '&ik=0000000055&extra=ignored')
   ];
   for (const [location, nodes, expected] of [
     [account, anchors.slice(0, -1), null],
-    [account, anchors, 'fromGmail'],
-    [new URL('?ik=fromAccount', account), anchors, 'fromAccount']
+    [account, anchors, '0000000055'],
+    [new URL('?ik=0000000066', account), anchors, '0000000066']
   ]) {
     let observed;
     const api = harness(location, async url => {
@@ -122,6 +122,71 @@ test('only forwards an existing Gmail mailbox hint from this message on the same
     assert.equal(observed.origin + observed.pathname, account.origin + account.pathname);
     assert.equal(observed.searchParams.get('ik'), expected);
     assert.equal(observed.searchParams.has('extra'), false);
+  }
+});
+
+test('a manual scan uses a valid worker hint for the native source view first; auto scans never ask', async () => {
+  let lookups = 0;
+  const runtime = { sendMessage: async msg => {
+    assert.deepEqual(Object.keys(msg), ['type']);
+    assert.equal(msg.type, 'pg:gmail:mailboxHint');
+    lookups++;
+    return {ok: true, hint: '123abc0000'};
+  } };
+  const views = [];
+  const implementation = { createHTMLDocument: () => ({ createElement: () => ({
+    content: { querySelectorAll: sel => sel === 'pre.raw_message_text' ? [{textContent: eml}] : [] }
+  }) }) };
+  const api = harness(account, async url => {
+    const params = new URL(url).searchParams;
+    views.push(params.get('view'));
+    if (params.get('view') === 'att') {
+      assert.equal(params.has('ik'), false);
+      return new Response(eml);
+    }
+    assert.equal(params.get('ik'), '123abc0000');
+    assert.equal(params.get('permmsgid'), 'msg-f:' + BigInt('0x' + id));
+    return new Response('<pre class="raw_message_text"></pre>', {headers: {'content-type': 'text/html'}});
+  }, [], runtime, implementation);
+  await api.read(id);
+  assert.equal(lookups, 0);
+  assert.equal(await api.read(id, undefined, true), '<p>Prueba ☃</p>');
+  assert.equal(lookups, 1);
+  assert.deepEqual(views, ['att', 'om']);
+});
+
+test('tries one download after a rejected native source, and ignores malformed or unavailable worker hints', async () => {
+  for (const [reply, order] of [
+    [{ok: true, hint: '123abc1234'}, ['om', 'att']],
+    [{ok: true, hint: 'abcd1234&x=0'}, ['att']],
+    [{ok: true, hint: 'a'.repeat(33)}, ['att']],
+    [{ok: false, hint: 'abcd1234'}, ['att']],
+    [null, ['att']]
+  ]) {
+    const views = [];
+    const api = harness(account, async url => {
+      const params = new URL(url).searchParams;
+      views.push(params.get('view'));
+      assert.equal(params.get('ik'), order.length === 2 ? reply.hint : null);
+      return params.get('view') === 'om' ? new Response('Unavailable', {status: 404}) : new Response(eml);
+    }, [], {sendMessage: async () => { if (!reply) throw Error('Worker unavailable'); return reply; }});
+    assert.equal(await api.read(id, undefined, true), '<p>Prueba ☃</p>');
+    assert.deepEqual(views, order);
+  }
+});
+
+test('does not request the message after it closes or the request aborts during a mailbox lookup', async () => {
+  for (const abort of [false, true]) {
+    const body = bodyWith({'data-legacy-message-id': id});
+    const cancel = new AbortController();
+    let requests = 0;
+    const api = harness(account, async () => { requests++; return new Response(eml); }, [], {sendMessage: async () => {
+      if (abort) cancel.abort();
+      else body.isConnected = false;
+      return {ok: true, hint: '123abc0000'};
+    }});
+    await assert.rejects(api.read(id, cancel.signal, true, body), /cancelled|changed/);
+    assert.equal(requests, 0);
   }
 });
 

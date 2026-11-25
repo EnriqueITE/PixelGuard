@@ -24,6 +24,7 @@ function harness(shared = { data: {} }) {
   const gmail = { id: 'sample', url: 'https://mail.google.com/mail/u/0/', frameId: 0, tab: { id: 1, windowId: 3 } };
   let handler, revoked, access, permission = false;
   const chrome = {
+    scripting: shared.scripting,
     runtime: { id: 'sample', getURL: p => origin + p, getManifest: () => ({ name: 'PixelGuard for Gmail' }),
       onMessage: { addListener(fn) { handler = fn; } }, onInstalled: { addListener() {} }, onStartup: { addListener() {} } },
     action: {
@@ -141,6 +142,57 @@ test('only an active top-level Gmail document can publish valid badge counts', a
 test('ignores requests from older content scripts to open the original in another tab', async () => {
   const h = harness();
   assert.equal(await h.send('pg:openOriginal', { messageId: 'fedcbafeedac1234' }, h.gmail), undefined);
+  assert.deepEqual(h.openedTabs, []);
+});
+
+test('reads only the native routing hint from the requesting Gmail account and document', async () => {
+  const shared = {data: {}, scripting: {}};
+  const h = harness(shared);
+  const sender = {...h.gmail, documentId: 'active-doc', documentLifecycle: 'active'};
+  const calls = [];
+  let page = new URL(sender.url);
+  let value = '0fabc12345';
+  let resultDocument = sender.documentId;
+  let resultFrame = 0;
+  const field = new Proxy({}, {
+    get(target, key) { assert.equal(key, '9'); return value; }
+  });
+  shared.scripting.executeScript = async ({func, args, target, world}) => {
+    calls.push(clone(target));
+    assert.equal(world, 'MAIN');
+    const read = vm.runInNewContext('(' + func.toString() + ')', {window: {GLOBALS: field}, location: page});
+    return [{result: read(...args), frameId: resultFrame, documentId: resultDocument}];
+  };
+  const request = (senderOverride = {}) => h.send('pg:gmail:mailboxHint', {tabId: 99, path: '/mail/u/100/'}, {...sender, ...senderOverride});
+  assert.deepEqual(await request(), {ok: true, hint: value});
+  assert.deepEqual(calls[0], {tabId: sender.tab.id, documentIds: [sender.documentId]});
+  assert.deepEqual(await request({documentId: undefined}), {ok: true, hint: value});
+  assert.deepEqual(calls[1], {tabId: sender.tab.id, frameIds: [0]});
+  const blank = {ok: true, hint: ''};
+  for (const invalid of [undefined, 12345678, {}, '1234', '1234567890abcdef0', 'abcdefgh', 'deadbeef&extra=1']) {
+    value = invalid;
+    assert.deepEqual(await request(), blank);
+  }
+  value = 'fe123456';
+  for (const destination of ['https://mail.google.com/mail/u/8/', 'https://example.test/mail/u/0/']) {
+    page = new URL(destination);
+    assert.deepEqual(await request(), blank);
+  }
+  page = new URL(sender.url);
+  resultDocument = 'different-doc';
+  assert.deepEqual(await request(), blank);
+  resultDocument = sender.documentId;
+  resultFrame = 1;
+  assert.deepEqual(await request(), blank);
+  const injections = calls.length;
+  for (const override of [
+    {id: 'other'}, {frameId: 1}, {documentLifecycle: 'cached'}, {tab: {id: -1}},
+    {url: 'https://example.test/mail/u/0/'}, {url: 'https://mail.google.com/mail/u/not-a-mailbox/'}
+  ]) assert.deepEqual(await request(override), {ok: false, error: 'unauthorized'});
+  assert.deepEqual(await h.send('pg:gmail:mailboxHint'), {ok: false, error: 'unauthorized'});
+  assert.equal(calls.length, injections);
+  assert.deepEqual(h.data, {});
+  assert.deepEqual(h.requests, []);
   assert.deepEqual(h.openedTabs, []);
 });
 
