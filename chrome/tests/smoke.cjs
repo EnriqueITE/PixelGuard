@@ -265,6 +265,36 @@ async function main() {
     await checkBadge(probe, tabId, "1++", badgeColors.red);
     assert.equal(await probe.evaluate(tabId => chrome.action.getTitle({tabId}), tabId),
       "PixelGuard · Possible tracking pixels and suspicious images: 1 · External images: 24 · Links with tracking indicators: 25");
+    // A blocked newsletter can still expose its click redirects in the DOM.
+    await page.locator("#link .a3s").evaluate(body => {
+      body.replaceChildren();
+      for (let i = 0; i < 31; i++) {
+        const encoded = btoa("example-item-" + String(i).padStart(2, "0") + "!");
+        const token = i < 27 ? encoded : encoded.replace(/=+$/, "");
+        const link = document.createElement("a");
+        link.href = "https://mail.shop.app/_t/c/v3/" + token;
+        link.textContent = "Item " + i;
+        body.append(link);
+      }
+      const ordinary = document.createElement("a");
+      ordinary.href = "https://shop.app/products/plain";
+      ordinary.textContent = "Ordinary product link";
+      body.append(ordinary);
+      for (let i = 0; i < 23; i++) {
+        const image = new Image();
+        if (i === 0) image.style.display = "none";
+        body.append(image);
+      }
+    });
+    await checkSummary("link", "31 links with tracking indicators · 23 images without a URL · Partial scan", colorFor["tracking-link"]);
+    await checkBadge(probe, tabId, "00+", badgeColors.orange);
+    const shop = panel("link");
+    await shop.locator("summary").click();
+    assert.match(await shop.locator(".pg-note").innerText(), /marks one of these images as hidden/i);
+    await shop.getByRole("combobox").selectOption("unavailable-image");
+    const hidden = shop.locator('li[data-category="unavailable-image"]').filter({hasText: /display:\s*none/i});
+    assert.equal(await hidden.count(), 1);
+    assert.equal(await hidden.locator(".pg-url,button").count(), 0);
     await page.locator("#link .a3s").evaluate(body => body.replaceChildren(document.createTextNode("Hello")));
     await checkSummary("link", "No tracking indicators found", "rgb(214, 226, 226)");
     await page.goto("https://example.test/");

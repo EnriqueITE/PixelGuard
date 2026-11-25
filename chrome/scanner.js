@@ -229,12 +229,16 @@
     return isRemote(destination) && tryURL(destination) !== null;
   }
 
+  function isShopClickRedirect(u) {
+    return u.origin === "https://mail.shop.app" && /^\/_t\/c\/v3\/[A-Za-z0-9_-]+={0,2}$/.test(u.pathname);
+  }
+
   function classifyLink(rawUrl) {
     if (!isRemote(rawUrl)) return null;
     const u = tryURL(rawUrl);
     if (!u) return null;
     const params = matchingParams(u, LINK_TRACKING_PARAMS);
-    const pathSuspicious = LINK_PATH_RE.test(u.pathname) || isAmazonClickRedirect(u);
+    const pathSuspicious = LINK_PATH_RE.test(u.pathname) || isAmazonClickRedirect(u) || isShopClickRedirect(u);
     const hostSuspicious = LINK_HOST_RE.test(u.hostname);
     if (!params.length && !pathSuspicious && !hostSuspicious) return null;
 

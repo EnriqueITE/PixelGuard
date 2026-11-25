@@ -99,6 +99,14 @@
     return /^https?:\/\//i.test(text) ? "" : text.replace(/\s+/g, " ").trim().slice(0, 180);
   }
 
+  function explicitHiddenReason(img) {
+    if (img.style.display === "none") return t("reason_displayNone");
+    if (img.style.visibility === "hidden") return t("reason_visibilityHidden");
+    if (parseFloat(img.style.opacity) === 0) return t("reason_opacityZero");
+    if (img.hasAttribute("hidden")) return t("gmailHiddenAttribute");
+    return "";
+  }
+
   function drawPage(state) {
     const {filter, list, footer, prev, next, range} = state;
     const entries = filter.value === "all" ? state.entries :
@@ -168,7 +176,6 @@
     if (!result.suspicious.length && !result.links.length && !missing) totals.unshift(t("gmailNoSignals"));
     if (missing) totals.push(element("span", "", t("gmailPartial")));
     state.status.replaceChildren(...totals.flatMap((total, index) => index ? [" · ", total] : [total]));
-    state.note.textContent = missing ? t("gmailUnavailableImages", String(missing)) : "";
     for (const option of state.filter.options) {
       const count = option.value === "all" ? items.length + missing : counts.get(option.value) || 0;
       option.textContent = t(filterLabels[option.value]) + " (" + count + ")";
@@ -189,14 +196,23 @@
       if (!reasons.length && item.classification === "external-image") reasons.push(t("reason_visibleRemote"));
       return {item, label: labels.get(item.url), reason: reasons.join(" · ")};
     });
+    let hiddenMissing = 0;
     unavailable.forEach((img, index) => {
       const description = [img.alt, img.getAttribute("aria-label"), img.title].find(text => text?.trim());
       const label = description?.trim().slice(0, 180) || t("gmailUnnamedImage", String(index + 1));
       const width = img.getAttribute("width");
       const height = img.getAttribute("height");
-      const reason = /^\d{1,5}$/.test(width) && /^\d{1,5}$/.test(height) ? width + " × " + height + " px" : "";
+      const size = /^\d{1,5}$/.test(width) && /^\d{1,5}$/.test(height) ? width + " × " + height + " px" : "";
+      const hiddenReason = explicitHiddenReason(img);
+      if (hiddenReason) hiddenMissing++;
+      const reason = [hiddenReason, size].filter(Boolean).join(" · ");
       state.entries.push({item: {classification: "unavailable-image"}, label, reason});
     });
+    const notes = [];
+    if (missing) notes.push(t("gmailUnavailableImages", String(missing)));
+    if (hiddenMissing === 1) notes.push(t("gmailOneHiddenMissing"));
+    if (hiddenMissing > 1) notes.push(t("gmailSeveralHiddenMissing", String(hiddenMissing)));
+    state.note.textContent = notes.join(" ");
     drawPage(state);
   }
 
