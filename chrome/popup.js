@@ -97,6 +97,7 @@
         inventoryRequest = null;
         el("file").value = "";
         el("url").value = "";
+        el("url").removeAttribute("title");
         urlPicker.setLinks([]);
         el("truncated").hidden = true;
       }

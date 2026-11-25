@@ -110,17 +110,23 @@ async function run() {
     await q("lookup").locator("summary").click();
     const address = page.getByRole("combobox", { name: catalog.pgLinkAddress.message, exact: true });
     const list = page.getByRole("listbox");
-    const tip = q("url-tip");
     assert.equal(await q("link-fields").locator("select:visible,textarea:visible,input:visible").count(), 1);
     await q("show-links").click();
     const longOption = list.getByRole("option", { name: sample, exact: true });
     assert.equal(await longOption.innerText(), sample);
     assert.ok(await longOption.evaluate(node => getComputedStyle(node).textOverflow === "ellipsis" &&
       node.scrollWidth > node.clientWidth), "Long options ellipsize within the popup");
-    await longOption.hover();
-    await tip.waitFor();
-    assert.equal(await tip.innerText(), sample);
-    assert.ok(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), "The entire tooltip fits the popup width");
+    const helpUrl = "https://example.test/help";
+    const helpOption = list.getByRole("option", { name: helpUrl, exact: true });
+    const pickerLayout = () => page.locator("#url, .url-option, #query-domain, #preview-url").evaluateAll(nodes =>
+      nodes.map(node => [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight]));
+    const initialLayout = await pickerLayout();
+    for (const [option, url] of [[longOption, sample], [helpOption, helpUrl]]) {
+      await option.hover();
+      assert.equal(await option.getAttribute("title"), url, "The native pointer hint belongs to the hovered row");
+      assert.equal(await page.locator("#url-tip, [role=tooltip]").count(), 0, "No popup scroll panel is needed for hover");
+      assert.deepEqual(await pickerLayout(), initialLayout, "Hovering must not move the options or lookup buttons");
+    }
     await longOption.click();
     await list.waitFor({ state: "hidden" });
     assert.equal(await address.inputValue(), sample);
@@ -133,28 +139,28 @@ async function run() {
     await address.blur();
     assert.equal(await address.evaluate(node => getComputedStyle(node).textOverflow), "ellipsis");
     await address.hover();
-    await tip.waitFor();
-    assert.equal(await tip.innerText(), sample);
-    await page.locator("header").hover();
-    await tip.waitFor({ state: "hidden" });
+    assert.equal(await address.getAttribute("title"), sample);
 
     await q("show-links").click();
     await list.waitFor();
     await address.press("Tab");
     await list.waitFor({ state: "hidden" });
     await address.fill("");
+    assert.equal(await address.evaluate(node => node.title), "", "Clearing the field clears its previous URL hint");
     await address.press("Escape");
     await address.press("ArrowDown");
     await list.waitFor();
     await address.press("Enter");
     await list.waitFor({ state: "hidden" });
     assert.equal(await address.inputValue(), sample);
+    assert.equal(await address.getAttribute("title"), sample, "Keyboard selection updates the same pointer hint");
     assert.equal(await q("panel-toggle").isChecked(), false);
     await q("preview-url").click();
     assert.equal(await q("exact-url").innerText(), sample);
     await q("cancel-url").click();
     assert.deepEqual(await page.evaluate(() => testState.lookups), [], "Selecting, hovering and cancelling stay local");
     await address.fill("https://tracking.example.test/tickets");
+    assert.equal(await address.getAttribute("title"), "https://tracking.example.test/tickets");
     await longOption.waitFor();
     await q("query-domain").click();
     assert.deepEqual(await page.evaluate(() => testState.lookups), [
@@ -174,12 +180,14 @@ async function run() {
 
     await q("vt-toggle").click();
     await q("lookup").waitFor({ state: "hidden" });
+    assert.equal(await q("url").evaluate(node => node.title), "", "Disabling VirusTotal clears the selected URL hint");
     await page.evaluate(() => { testState.links = []; });
     await q("vt-toggle").click();
     await q("lookup").locator("summary").click();
     await page.waitForFunction(() => testState.inventory === 2);
     const manual = "https://manual.example.test/path?item=42#details";
     await address.fill(manual);
+    assert.equal(await address.getAttribute("title"), manual);
     await address.press("ArrowDown");
     assert.equal(await list.count(), 0, "Manual entry works without suggestions");
     await q("preview-url").click();
@@ -205,7 +213,7 @@ async function run() {
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "apiKey"]);
     assert.deepEqual(errors, []);
     assert.deepEqual(outbound, [], "The popup never opens a selected or hovered email URL");
-    console.log("PASS theme and key settings, one URL picker, full link on hover, keyboard selection, manual entry and explicit domain/URL lookups");
+    console.log("PASS theme and key settings, native URL hover hints, stable picker layout, keyboard selection, manual entry and explicit domain/URL lookups");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });
