@@ -44,7 +44,33 @@ async function main() {
     assert.deepEqual(actual.links, ['https://mail.shop.app/_t/c/v3/YQ==']);
     assert.equal(actual.labels[actual.links[0]], 'A product');
     assert.equal(actual.labels[actual.externals[0]], 'Company logo');
-    console.log('PASS original HTML pixel, logo, labels and zero remote resource requests');
+
+    const sourcePage = '<pre class="raw_message_text">Content-Type: text/html; charset=UTF-8\n\n' +
+      '&lt;img width="1" height="1" src="https://example.test/open"&gt;</pre>';
+    let nativePage = '<!doctype html><img src="https://example.test/in-page">' +
+      '<iframe src="https://example.test/frame"></iframe>' + sourcePage;
+    const gmail = 'https://mail.google.com/mail/u/2/';
+    await page.route('https://mail.google.com/**', route => {
+      const url = new URL(route.request().url());
+      if (url.href === gmail) return route.fulfill({contentType: 'text/html', body: '<main></main>'});
+      if (url.searchParams.get('view') === 'att') return route.fulfill({status: 503});
+      if (url.searchParams.get('view') === 'om') return route.fulfill({contentType: 'text/html', body: nativePage});
+      throw new Error('Unexpected Gmail request ' + url);
+    });
+    await page.goto(gmail);
+    for (const file of ['original-mime.js', 'gmail-original.js']) {
+      await page.addScriptTag({path: path.join(chromeDir, file)});
+    }
+    const read = () => page.evaluate(() => PixelGuardGmailOriginal.read('abcd'));
+    assert.equal(await read(), '<img width="1" height="1" src="https://example.test/open">');
+    for (const invalidPage of ['<html>Sign in</html>', sourcePage + sourcePage]) {
+      nativePage = invalidPage;
+      await assert.rejects(read(), /Gmail original unavailable/);
+    }
+    await page.waitForLoadState('networkidle');
+    assert.equal(await page.locator('img, iframe, pre').count(), 0);
+    assert.deepEqual(requests, []);
+    console.log('PASS original HTML and Gmail source view parsed with zero remote resource requests');
   } finally {
     await browser.close();
   }

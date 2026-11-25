@@ -96,12 +96,7 @@
     return false;
   }
 
-  async function read(id, signal) {
-    const account = accountPath();
-    if (!account || typeof id !== 'string' || !HEX_ID.test(id)) throw Error('Invalid Gmail message');
-    // Same request as Gmail's own Download original link. In this view "th"
-    // takes the individual message ID, including inside a conversation.
-    const url = location.origin + account + '?view=att&th=' + id + '&attid=0&disp=comp&safe=1&zw';
+  async function readSource(url, signal, expectHtmlPage) {
     const response = await fetch(url, {
       credentials: 'same-origin', mode: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer',
       cache: 'no-store', signal
@@ -112,15 +107,16 @@
     let length = 0;
     try {
       const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-      if (response.status !== 200 || type === 'text/html' || type === 'application/xhtml+xml') {
+      const isHtmlPage = type === 'text/html' || type === 'application/xhtml+xml';
+      if (Number(response.headers.get('content-length')) > SOURCE_LIMIT) throw new RangeError('Original too large');
+      if (response.status !== 200 || isHtmlPage !== expectHtmlPage) {
         throw Error('Gmail original unavailable');
       }
-      if (Number(response.headers.get('content-length')) > SOURCE_LIMIT) throw Error('Original too large');
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
         length += value.length;
-        if (length > SOURCE_LIMIT) throw Error('Original too large');
+        if (length > SOURCE_LIMIT) throw new RangeError('Original too large');
         chunks.push(value);
       }
     } catch (error) {
@@ -134,6 +130,30 @@
     for (const chunk of chunks) {
       source.set(chunk, offset);
       offset += chunk.length;
+    }
+    return source;
+  }
+
+  async function read(id, signal) {
+    const account = accountPath();
+    if (!account || typeof id !== 'string' || !HEX_ID.test(id)) throw Error('Invalid Gmail message');
+    const base = location.origin + account;
+    // The download uses this individual message's hex ID; the original view
+    // uses the same 64 bits in decimal. Neither URL comes from the email.
+    const download = base + '?view=att&th=' + id + '&attid=0&disp=comp&safe=1&zw';
+    let source;
+    try {
+      source = await readSource(download, signal, false);
+    } catch (error) {
+      if (signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
+      const view = base + '/?view=om&permmsgid=msg-f:' + BigInt('0x' + id).toString();
+      const page = await readSource(view, signal, true);
+      // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
+      const template = document.implementation.createHTMLDocument('').createElement('template');
+      template.innerHTML = new TextDecoder('utf-8').decode(page);
+      const raw = template.content.querySelectorAll('pre.raw_message_text');
+      if (raw.length !== 1) throw Error('Gmail original unavailable');
+      source = raw[0].textContent;
     }
     return PixelGuardOriginalMime.html(source);
   }

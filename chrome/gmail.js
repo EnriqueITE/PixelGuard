@@ -8,6 +8,8 @@
   const dirty = new Set();
   const originalPage = new URL(location.href).searchParams.get("view") === "om";
   let originalPageRecord;
+  const maxOriginalReads = 2;
+  let activeOriginalReads = 0;
   const pageSize = 3;
   let showPanel = false;
   const t = (key, ...values) => chrome.i18n.getMessage(key, values);
@@ -60,7 +62,7 @@
     return control;
   }
 
-  function createPanel(onOriginal) {
+  function createPanel(onShowNativeOriginal) {
     const panel = element("details", "pixelguard-gmail");
     const summary = element("summary");
     const logo = element("img");
@@ -72,14 +74,14 @@
     summary.append(logo, element("strong", "", "PixelGuard"), status, chevron);
     const note = element("p", "pg-note");
     const originalBar = element("div", "pg-original");
-    const originalButton = button(t("gmailAnalyzeOriginal"));
+    const originalButton = button(t("gmailShowNativeOriginal"));
     const originalStatus = element("span");
     originalStatus.setAttribute("role", "status");
     originalBar.append(originalButton, originalStatus);
     originalBar.hidden = true;
-    originalButton.hidden = !onOriginal;
-    if (onOriginal) originalButton.addEventListener("click", event => {
-      if (event.isTrusted) onOriginal();
+    originalButton.hidden = true;
+    if (onShowNativeOriginal) originalButton.addEventListener("click", event => {
+      if (event.isTrusted) onShowNativeOriginal();
     });
     const filterBar = element("label", "pg-filter");
     const filter = element("select");
@@ -233,8 +235,8 @@
   function visibleBodies() {
     return [...document.querySelectorAll(bodySelector)].filter(body =>
       body.closest(messageSelector) && !body.parentElement.closest(bodySelector) &&
-      !body.closest('[contenteditable="true"], [g_editable="true"], [role="textbox"], [aria-hidden="true"]') &&
-      body.getClientRects().length);
+      !body.closest('[contenteditable]:not([contenteditable="false"]), [g_editable="true"], [role="textbox"], [aria-hidden="true"], [hidden], [inert]') &&
+      body.getClientRects().length && getComputedStyle(body).visibility === "visible");
   }
 
   function linkInventory() {
@@ -272,57 +274,54 @@
     if (!entry.view) return;
     const {originalBar, originalButton, originalStatus} = entry.view;
     originalBar.hidden = !entry.id;
-    originalButton.hidden = !!entry.original;
-    originalButton.disabled = !!entry.request || !!entry.openingNative;
-    const label = t(entry.failed ? "gmailShowNativeOriginal" : "gmailAnalyzeOriginal");
-    if (originalButton.textContent !== label) originalButton.textContent = label;
-    const key = entry.request ? "gmailReadingOriginal" : entry.original ? "gmailOriginalDone" :
-      entry.showMenuHint ? "gmailOriginalMenuHint" : entry.failed ? "gmailOriginalFailed" : "";
-    const text = key ? t(key) : "";
+    originalButton.hidden = !entry.failed;
+    originalButton.disabled = !!entry.openingNative;
+    const key = entry.original ? "gmailOriginalDone" : entry.plainText ? "gmailPlainSource" :
+      entry.showMenuHint ? "gmailOriginalMenuHint" : entry.failed ? "gmailOriginalFailed" : "gmailReadingOriginal";
+    const text = t(key);
     if (originalStatus.textContent !== text) originalStatus.textContent = text;
   }
 
-  async function analyzeOriginal(body, entry) {
-    if (!entry.id || entry.request || entry.original || entry.openingNative || messages.get(body) !== entry ||
+  async function showNativeOriginal(body, entry) {
+    if (!entry.failed || entry.openingNative || messages.get(body) !== entry ||
         !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
-    if (entry.failed) {
-      entry.openingNative = true;
-      originalControls(entry);
-      try {
-        await PixelGuardGmailOriginal.openNative(body);
-      } catch {
-        // Gmail may have replaced the menu. The manual menu hint still applies.
-      } finally {
-        entry.openingNative = false;
-        entry.showMenuHint = true;
-        if (messages.get(body) === entry) originalControls(entry);
-      }
-      return;
-    }
-    const request = new AbortController();
-    entry.request = request;
-    entry.failed = false;
+    entry.openingNative = true;
     originalControls(entry);
+    try {
+      await PixelGuardGmailOriginal.openNative(body);
+    } catch {
+      // Gmail may have replaced the menu. The manual menu hint still applies.
+    } finally {
+      entry.openingNative = false;
+      entry.showMenuHint = true;
+      if (messages.get(body) === entry) originalControls(entry);
+    }
+  }
+
+  async function analyzeOriginal(body, entry) {
+    const request = new AbortController();
+    activeOriginalReads++;
+    entry.request = request;
     const timeout = setTimeout(() => request.abort(), 20000);
     try {
       const html = await PixelGuardGmailOriginal.read(entry.id, request.signal);
       if (request.signal.aborted || !body.isConnected || messages.get(body) !== entry ||
           PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
       entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
-      if (entry.view) {
+      if (entry.view?.filter.value === "unavailable-image") {
         entry.view.filter.value = "all";
         entry.view.page = 0;
       }
       dirty.add(body);
-    } catch {
-      entry.failed = true;
+    } catch (error) {
+      entry.plainText = error.name === "PlainTextOriginal";
+      entry.failed = !entry.plainText;
     } finally {
       clearTimeout(timeout);
       entry.request = null;
-      if (messages.get(body) === entry) {
-        originalControls(entry);
-        scheduleRefresh();
-      }
+      activeOriginalReads--;
+      if (messages.get(body) === entry) originalControls(entry);
+      scheduleRefresh();
     }
   }
 
@@ -341,7 +340,9 @@
       try {
         const html = PixelGuardOriginalMime.html(raw.textContent);
         originalPageRecord.scan = PixelGuardOriginalScan.scan(html);
-      } catch { /* Gmail may show a source with no readable HTML body. */ }
+      } catch (error) {
+        originalPageRecord.plainText = error.name === "PlainTextOriginal";
+      }
     }
     const record = originalPageRecord;
     const result = record.scan?.result;
@@ -353,7 +354,7 @@
         view.originalBar.hidden = false;
         view.originalStatus.textContent = t("gmailOriginalDone");
       } else {
-        view.status.textContent = t("gmailOriginalUnsupported");
+        view.status.textContent = t(record.plainText ? "gmailPlainSource" : "gmailOriginalUnsupported");
         view.filterBar.hidden = view.footer.hidden = view.empty.hidden = true;
       }
       raw.before(view.panel);
@@ -399,7 +400,7 @@
       links += result.links.length;
       if (showPanel) {
         const mount = !entry.view;
-        if (mount) entry.view = createPanel(() => analyzeOriginal(body, entry));
+        if (mount) entry.view = createPanel(() => showNativeOriginal(body, entry));
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
         if (updated || mount) {
           render(entry.view, body, result, entry.original?.labels);
@@ -418,6 +419,14 @@
     }
     dirty.clear();
     updateBadge(suspicious, externals, links);
+
+    if (document.hidden) return;
+    for (const [body, entry] of messages) {
+      if (activeOriginalReads >= maxOriginalReads) break;
+      if (entry.id && !entry.request && !entry.original && !entry.plainText && !entry.failed) {
+        analyzeOriginal(body, entry);
+      }
+    }
   }
 
   let scheduled = false;
@@ -442,7 +451,7 @@
   });
   observer.observe(document.documentElement, {
     subtree: true, childList: true, characterData: true, attributes: true,
-    attributeFilter: ["class", "hidden", "aria-hidden", "style", "src", "srcset", "data-src",
+    attributeFilter: ["class", "hidden", "inert", "aria-hidden", "style", "src", "srcset", "data-src",
       "data-original", "data-lazy", "data-lazy-src", "data-url", "data-srcset", "href",
       "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
   });

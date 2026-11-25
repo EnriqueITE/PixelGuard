@@ -51,19 +51,51 @@ test('retrieves only Gmail’s own original as bytes, with cancellation and no r
   assert.equal(requests, 1);
 });
 
-test('rejects a login page, incomplete response or oversized stream before MIME analysis', async () => {
-  for (const response of [
-    new Response(eml, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
-    new Response(eml, { status: 206 }),
-    new Response(eml, { headers: { 'content-length': String(8 * 1024 * 1024 + 1) } })
+test('tries only the corresponding Gmail original view when the download is unavailable', async () => {
+  const signal = new AbortController().signal;
+  const native = 'https://mail.google.com/mail/u/2/?view=om&permmsgid=msg-f:' + BigInt('0x' + id);
+  for (const download of [
+    () => new Response('<html>Sign in</html>', { headers: { 'content-type': 'text/html' } }),
+    () => new Response(eml, { status: 206 }),
+    () => { throw new TypeError('Network error'); }
   ]) {
-    await assert.rejects(harness(account, async () => response).read(id));
+    const requests = [];
+    const api = harness(account, async (url, options) => {
+      requests.push(url);
+      if (requests.length === 1) return download();
+      assert.equal(url, native);
+      assert.equal(options.mode, 'same-origin');
+      assert.equal(options.credentials, 'same-origin');
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.referrerPolicy, 'no-referrer');
+      assert.equal(options.signal, signal);
+      return new Response('Not a Gmail original page', { headers: { 'content-type': 'text/plain' } });
+    });
+    await assert.rejects(api.read(id, signal), /Gmail original unavailable/);
+    assert.equal(requests.length, 2);
   }
+});
+
+test('does not request the original again after a size limit, cancellation, or unsupported MIME', async () => {
+  const ctrl = new AbortController();
+  for (const [download, expected] of [
+    [() => new Response(eml, { headers: { 'content-length': String(8 * 1024 * 1024 + 1) } }), /too large/],
+    [() => new Response('Content-Type: text/plain\r\n\r\nA plain message'), /no HTML/],
+    [() => { ctrl.abort(); throw new Error('Cancelled'); }, /Cancelled/]
+  ]) {
+    let requests = 0;
+    const api = harness(account, async () => { requests++; return download(); });
+    await assert.rejects(api.read(id, ctrl.signal), expected);
+    assert.equal(requests, 1);
+  }
+  let requests = 0;
   let cancelled = false;
   const stream = new ReadableStream({
     pull(controller) { controller.enqueue(new Uint8Array(4 * 1024 * 1024)); },
     cancel() { cancelled = true; }
   });
-  await assert.rejects(harness(account, async () => new Response(stream)).read(id), /too large/);
+  const api = harness(account, async () => { requests++; return new Response(stream); });
+  await assert.rejects(api.read(id), /too large/);
   assert.equal(cancelled, true);
+  assert.equal(requests, 1);
 });

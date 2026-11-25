@@ -87,10 +87,12 @@
     }
     const source = (sourceIsBytes ? binaryString(raw) : raw).replace(/\r\n?/g, '\n');
     const budget = { parts: 1 };
+    let foundPlainText = false;
     function select(part, depth) {
       if (depth > 16) throw Error('MIME nesting too deep');
       if (!part || part.attached) return null;
       const { type, params } = part.content;
+      if (type === 'text/plain') foundPlainText = true;
       if (type === 'text/html') return decode(part, sourceIsBytes);
       if (!['multipart/mixed', 'multipart/related', 'multipart/alternative', 'multipart/signed'].includes(type)) return null;
       const children = childrenOf(part, budget);
@@ -108,8 +110,13 @@
       }
       return null;
     }
-    const result = select(entity(source), 0);
-    if (!result?.trim()) throw Error('Original has no HTML body');
+    const root = entity(source);
+    const result = select(root, 0);
+    if (!result?.trim()) {
+      const error = Error('Original has no HTML body');
+      if (foundPlainText && root.headers.size) error.name = 'PlainTextOriginal';
+      throw error;
+    }
     return result;
   }
 

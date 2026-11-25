@@ -65,3 +65,11 @@ test('rejects truncated, undecodable and oversized originals', () => {
   assert.throws(() => html(part('Content-Type: text/html', 'x'.repeat(2 * 1024 * 1024 + 1))), /too large/);
   assert.throws(() => html('x'.repeat(8 * 1024 * 1024 + 1)), /size/);
 });
+
+test('recognizes a plain-text original without treating attachments or malformed data as the message body', () => {
+  const plain = part('From: sender@example.test', 'See https://example.test');
+  assert.throws(() => html(plain), { name: 'PlainTextOriginal' });
+  const attached = part('Content-Type: text/plain\r\nContent-Disposition: attachment', 'Attached text');
+  assert.throws(() => html(multipart('mixed', 'm', [attached])), { name: 'Error' });
+  assert.throws(() => html('invalid headers\n\nresponse'), { name: 'Error' });
+});
