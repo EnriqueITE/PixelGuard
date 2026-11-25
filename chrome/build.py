@@ -11,7 +11,7 @@ OUTPUT = ROOT / "dist" / "chrome-gmail"
 def build():
     files = {name: SOURCE / name for name in (
         "manifest.json", "gmail.js", "gmail.css", "scanner.js", "worker.js", "vault.js",
-        "popup.html", "popup.css", "popup.js", "virustotal/widget.js",
+        "popup.html", "popup.css", "popup-url.js", "popup.js", "virustotal/widget.js",
         "original-mime.js", "original-scan.js", "gmail-original.js"
     )}
     for size in (16, 24, 32):

@@ -43,7 +43,7 @@
   "pgLink": { "message": "Enlace" },
   "pgFile": { "message": "Archivo" },
   "pgThreadLinks": { "message": "Enlaces del correo abierto" },
-  "pgChooseLink": { "message": "Selecciona un enlace…" },
+  "pgChooseLink": { "message": "Selecciona o pega una URL" },
   "pgLinkAddress": { "message": "URL para consultar" },
   "pgReviewUrl": { "message": "Revisar URL completa" },
   "pgShareTitle": { "message": "URL que recibirá VirusTotal" },

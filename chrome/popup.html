@@ -6,6 +6,7 @@
   <title>PixelGuard</title>
   <link rel="stylesheet" href="popup.css">
   <script defer src="virustotal/inventory.js"></script>
+  <script defer src="popup-url.js"></script>
   <script defer src="popup.js"></script>
 </head>
 <body>
@@ -44,10 +45,18 @@
             <button type="button" id="file-mode" aria-pressed="false" data-msg="pgFile"></button>
           </div>
           <div id="link-fields">
-            <div id="inventory-field" hidden><label for="links" data-msg="pgThreadLinks"></label><select id="links"></select></div>
+            <label id="url-label" for="url" data-msg="pgLinkAddress"></label>
+            <div id="url-picker">
+              <div id="url-control">
+                <input id="url" type="text" inputmode="url" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="url-options"
+                       dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="16384">
+                <span id="picked-url" dir="ltr" aria-hidden="true" hidden></span>
+                <button id="show-links" type="button" tabindex="-1" aria-haspopup="listbox" aria-controls="url-options" hidden></button>
+              </div>
+              <div id="url-options" role="listbox" aria-labelledby="url-label" dir="ltr" hidden></div>
+              <div id="url-tip" role="tooltip" dir="ltr" hidden></div>
+            </div>
             <p class="muted" id="truncated" data-msg="vt_truncated" hidden></p>
-            <label for="url" data-msg="pgLinkAddress"></label>
-            <textarea id="url" rows="2" dir="ltr" placeholder="https://…" spellcheck="false" maxlength="16384"></textarea>
             <div class="buttons">
               <button id="query-domain" class="primary" disabled data-msg="vt_queryDomain"></button>
               <button id="preview-url" disabled data-msg="pgReviewUrl"></button>

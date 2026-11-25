@@ -6,7 +6,7 @@ const { chromium } = require("playwright-core");
 
 const extension = path.resolve(__dirname, "../../dist/chrome-gmail");
 const catalog = JSON.parse(fs.readFileSync(path.join(extension, "_locales/es/messages.json"), "utf8"));
-const sample = "https://example.test/account?test_id=sample";
+const sample = "https://tracking.example.test/tickets/buy?campaign=summer&recipient=" + "abcdef12".repeat(30) + "#end";
 async function run() {
   const browser = await chromium.launch({
     channel: "chromium", executablePath: process.env.CHROME_FOR_TESTING || undefined,
@@ -15,16 +15,21 @@ async function run() {
   try {
     const page = await browser.newPage({ viewport: { width: 366, height: 590 }, colorScheme: "dark" });
     const errors = [];
+    const outbound = [];
     page.on("pageerror", err => errors.push(err.message));
     await page.route("**/*", route => {
       const url = new URL(route.request().url());
-      if (url.origin !== "https://popup.example.test") return route.abort();
+      if (url.origin !== "https://popup.example.test") {
+        outbound.push(url.href);
+        return route.abort();
+      }
       return route.fulfill({ path: path.join(extension, url.pathname.slice(1)) });
     });
     await page.addInitScript(({ catalog, sample }) => {
       const state = { ok: true, hasKey: false, showPanel: true, vtEnabled: false };
       window.testState = { granted: false, lookups: [], permissionRequests: 0, settings: [], inventory: 0 };
       const test = window.testState;
+      test.links = [{ url: sample, label: "COMPRAR ENTRADAS" }, { url: "https://example.test/help", label: "Ayuda" }];
       const api = {
         i18n: {
           getUILanguage: () => "es",
@@ -37,7 +42,7 @@ async function run() {
         permissions: { request: async () => { test.permissionRequests++; return test.granted; } },
         tabs: {
           query: async () => [{ id: 1 }],
-          sendMessage: async () => { test.inventory++; return { links: [{ url: sample, label: "Enlace de prueba" }] }; }
+          sendMessage: async () => { test.inventory++; return { links: test.links }; }
         },
         runtime: { async sendMessage(msg) {
           if (msg.type === "pg:settings") {
@@ -55,7 +60,7 @@ async function run() {
           }
           if (msg.type === "pg:lookup") {
             test.lookups.push(msg);
-            throw new Error("Unexpected lookup");
+            return { ok: true, result: { status: "no_report", queriedAt: Date.now() } };
           }
           return { ...state };
         } }
@@ -103,13 +108,84 @@ async function run() {
     await page.evaluate(() => { testState.granted = true; });
     await q("vt-toggle").click();
     await q("lookup").locator("summary").click();
-    await q("links").selectOption(sample);
-    assert.equal(await q("url").inputValue(), sample);
+    const address = page.getByRole("combobox", { name: catalog.pgLinkAddress.message, exact: true });
+    const list = page.getByRole("listbox");
+    const tip = q("url-tip");
+    assert.equal(await q("link-fields").locator("select:visible,textarea:visible,input:visible").count(), 1);
+    await q("show-links").click();
+    const longOption = list.getByRole("option", { name: sample, exact: true });
+    assert.equal(await longOption.innerText(), sample);
+    assert.ok(await longOption.evaluate(node => getComputedStyle(node).textOverflow === "ellipsis" &&
+      node.scrollWidth > node.clientWidth), "Long options ellipsize within the popup");
+    await longOption.hover();
+    await tip.waitFor();
+    assert.equal(await tip.innerText(), sample);
+    assert.ok(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), "The entire tooltip fits the popup width");
+    await longOption.click();
+    await list.waitFor({ state: "hidden" });
+    assert.equal(await address.inputValue(), sample);
+    const picked = q("picked-url");
+    assert.ok(await picked.isVisible());
+    assert.equal(await picked.innerText(), sample);
+    assert.equal(await picked.getAttribute("aria-hidden"), "true");
+    assert.ok(await picked.evaluate(node => getComputedStyle(node).textOverflow === "ellipsis" &&
+      node.scrollWidth > node.clientWidth), "Show the ellipsis even while the selected field still has focus");
+    await address.blur();
+    assert.equal(await address.evaluate(node => getComputedStyle(node).textOverflow), "ellipsis");
+    await address.hover();
+    await tip.waitFor();
+    assert.equal(await tip.innerText(), sample);
+    await page.locator("header").hover();
+    await tip.waitFor({ state: "hidden" });
+
+    await q("show-links").click();
+    await list.waitFor();
+    await address.press("Tab");
+    await list.waitFor({ state: "hidden" });
+    await address.fill("");
+    await address.press("Escape");
+    await address.press("ArrowDown");
+    await list.waitFor();
+    await address.press("Enter");
+    await list.waitFor({ state: "hidden" });
+    assert.equal(await address.inputValue(), sample);
     assert.equal(await q("panel-toggle").isChecked(), false);
     await q("preview-url").click();
     assert.equal(await q("exact-url").innerText(), sample);
     await q("cancel-url").click();
-    assert.equal((await page.evaluate(() => testState.lookups)).length, 0);
+    assert.deepEqual(await page.evaluate(() => testState.lookups), [], "Selecting, hovering and cancelling stay local");
+    await address.fill("https://tracking.example.test/tickets");
+    await longOption.waitFor();
+    await q("query-domain").click();
+    assert.deepEqual(await page.evaluate(() => testState.lookups), [
+      { type: "pg:lookup", kind: "domain", value: "tracking.example.test", confirmed: false }
+    ], "A single click must query the typed domain even while suggestions are open");
+    assert.equal(await list.isVisible(), false, "Clicking the lookup button closes the suggestions");
+    await q("result").waitFor();
+    await q("show-links").click();
+    await longOption.click();
+    await q("preview-url").click();
+    assert.equal(await q("exact-url").innerText(), sample);
+    assert.equal((await page.evaluate(() => testState.lookups)).length, 1);
+    await q("confirm-url").click();
+    await q("result").waitFor();
+    assert.deepEqual(await page.evaluate(() => testState.lookups.at(-1)),
+      { type: "pg:lookup", kind: "url", value: sample, confirmed: true });
+
+    await q("vt-toggle").click();
+    await q("lookup").waitFor({ state: "hidden" });
+    await page.evaluate(() => { testState.links = []; });
+    await q("vt-toggle").click();
+    await q("lookup").locator("summary").click();
+    await page.waitForFunction(() => testState.inventory === 2);
+    const manual = "https://manual.example.test/path?item=42#details";
+    await address.fill(manual);
+    await address.press("ArrowDown");
+    assert.equal(await list.count(), 0, "Manual entry works without suggestions");
+    await q("preview-url").click();
+    assert.equal(await q("exact-url").innerText(), manual);
+    await q("cancel-url").click();
+    assert.equal((await page.evaluate(() => testState.lookups)).length, 2);
     assert.ok(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth));
     await q("manage").click();
     await q("delete-key").click();
@@ -128,7 +204,8 @@ async function run() {
     await q("manage").waitFor();
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "apiKey"]);
     assert.deepEqual(errors, []);
-    console.log("PASS light default and dark mode switch with mouse and keyboard, manual key entry, separate activation, permission denial, hidden-bar inventory, URL cancellation and key deletion");
+    assert.deepEqual(outbound, [], "The popup never opens a selected or hovered email URL");
+    console.log("PASS theme and key settings, one URL picker, full link on hover, keyboard selection, manual entry and explicit domain/URL lookups");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });

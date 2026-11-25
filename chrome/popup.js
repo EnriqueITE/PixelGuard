@@ -1,4 +1,4 @@
-/* global chrome, PixelGuardVTInventory */
+/* global chrome, PixelGuardVTInventory, initUrlPicker */
 (() => {
   const el = id => document.getElementById(id);
   const t = (key, ...args) => chrome.i18n.getMessage(key, args.map(String));
@@ -9,10 +9,11 @@
   let pending = false;
   let revision = 0;
   let preview = "";
-  let inventoryLoaded = false;
+  let inventoryRequest;
 
   document.documentElement.lang = chrome.i18n.getUILanguage();
   for (const item of document.querySelectorAll("[data-msg]")) item.textContent = t(item.dataset.msg);
+  const urlPicker = initUrlPicker(forgetLookup);
 
   function status(text = "", error = false) {
     const line = el("status");
@@ -93,11 +94,11 @@
       if (!next.vtEnabled) {
         forgetLookup();
         el("lookup").open = false;
-        inventoryLoaded = false;
+        inventoryRequest = null;
         el("file").value = "";
         el("url").value = "";
-        el("links").replaceChildren();
-        el("inventory-field").hidden = true;
+        urlPicker.setLinks([]);
+        el("truncated").hidden = true;
       }
       if (close) keyForm(false);
       if (patch.apiKey) status(t("vt_keySaved"));
@@ -122,34 +123,25 @@
   el("delete-key").onclick = () => save({ apiKey: "", vtEnabled: false }, { close: true });
 
   async function loadLinks() {
-    if (!state?.vtEnabled || inventoryLoaded || !el("lookup").open) return;
-    inventoryLoaded = true;
+    if (!state?.vtEnabled || inventoryRequest || !el("lookup").open) return;
+    const request = {};
+    inventoryRequest = request;
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id == null) return;
+      if (tab?.id == null || request !== inventoryRequest) return;
       const data = await chrome.tabs.sendMessage(tab.id, { type: "pg:gmail:links" });
-      if (!state.vtEnabled) return;
-      const list = el("links");
-      list.replaceChildren(new Option(t("pgChooseLink"), ""));
-      for (const item of data?.links || []) {
-        const url = PixelGuardVTInventory.validUrl(item.url);
-        if (!url) continue;
-        list.add(new Option(item.label ? item.label + " · " + url.host : url.href, url.href));
-      }
-      el("inventory-field").hidden = list.options.length <= 1;
+      if (request !== inventoryRequest) return;
+      urlPicker.setLinks(data?.links || []);
       el("truncated").hidden = !data?.truncated;
     } catch { /* Pasting a URL also works outside an open Gmail message. */ }
   }
   el("lookup").ontoggle = () => {
-    if (el("lookup").open) loadLinks(); else forgetLookup();
+    if (el("lookup").open) loadLinks();
+    else { urlPicker.close(); forgetLookup(); }
   };
-  el("links").onchange = () => {
-    el("url").value = el("links").value;
-    forgetLookup();
-  };
-  el("url").oninput = () => { el("links").value = ""; forgetLookup(); };
   el("file").onchange = forgetLookup;
   function setMode(file) {
+    urlPicker.close();
     el("link-mode").setAttribute("aria-pressed", String(!file));
     el("file-mode").setAttribute("aria-pressed", String(file));
     el("file-fields").hidden = !file;
