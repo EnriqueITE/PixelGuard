@@ -70,7 +70,7 @@
     const status = element("span", "pg-status");
     const chevron = element("i", "pg-chevron");
     chevron.setAttribute("aria-hidden", "true");
-    const originalButton = button(t("gmailFullScan"));
+    const originalButton = button(t("gmailRetryScan"));
     originalButton.className = "pg-full-scan";
     originalButton.hidden = true;
     if (onFullScan) originalButton.addEventListener("click", event => {
@@ -271,14 +271,12 @@
     if (!entry.view) return;
     const {originalBar, originalButton, originalStatus, missing} = entry.view;
     originalButton.hidden = !entry.failed;
-    const manualPending = entry.manualState === "queued" || entry.manualState === "reading";
-    originalButton.disabled = manualPending;
+    originalButton.disabled = entry.retryState === "pending";
     let text = "";
-    if (manualPending) text = t("gmailFullScanRunning");
-    else if (entry.manualState === "complete") text = t("gmailFullScanComplete");
-    else if (entry.manualState === "failed") text = t("gmailFullScanFailed");
-    else if (entry.manualState === "plain") text = t("gmailPlainSource");
-    else if (entry.id && !entry.original && !entry.failed && !entry.plainText) text = t("gmailReadingOriginal");
+    if (entry.original) text = t("gmailFullScanComplete");
+    else if (entry.plainText) text = t("gmailPlainSource");
+    else if (entry.retryState === "failed") text = t("gmailFullScanFailed");
+    else if (entry.id && (!entry.failed || entry.retryState === "pending")) text = t("gmailFullScanRunning");
     else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") : t("gmailUnavailableImages", String(missing));
     else if (entry.failed) text = t("gmailOriginalFailed");
     originalBar.hidden = !text;
@@ -286,9 +284,9 @@
   }
 
   function requestFullScan(body, entry) {
-    if (!entry.failed || entry.request || entry.manualState === "queued" || messages.get(body) !== entry ||
+    if (!entry.failed || entry.request || entry.retryState === "pending" || messages.get(body) !== entry ||
         !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
-    entry.manualState = "queued";
+    entry.retryState = "pending";
     entry.view.panel.open = true;
     originalControls(entry);
     scheduleRefresh();
@@ -296,20 +294,18 @@
 
   async function analyzeOriginal(body, entry) {
     const request = new AbortController();
-    const manual = entry.manualState === "queued";
-    if (manual) entry.manualState = "reading";
+    const retry = entry.retryState === "pending";
     activeOriginalReads++;
     entry.request = request;
     const timeout = setTimeout(() => request.abort(), 20000);
     try {
-      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, manual, body);
+      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, body);
       request.signal.throwIfAborted();
       if (!body.isConnected || messages.get(body) !== entry ||
           PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
       entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
       entry.failed = false;
-      if (manual) entry.manualState = "complete";
-      if (entry.view && (manual || entry.view.filter.value === "unavailable-image")) {
+      if (entry.view && (retry || entry.view.filter.value === "unavailable-image")) {
         entry.view.filter.value = "all";
         entry.view.page = 0;
       }
@@ -317,11 +313,11 @@
     } catch (error) {
       entry.plainText = error?.name === "PlainTextOriginal";
       entry.failed = !entry.plainText;
-      if (manual) entry.manualState = entry.plainText ? "plain" : "failed";
       if (messages.get(body) === entry) dirty.add(body);
     } finally {
       clearTimeout(timeout);
       entry.request = null;
+      entry.retryState = retry && entry.failed ? "failed" : null;
       activeOriginalReads--;
       if (messages.get(body) === entry) originalControls(entry);
       scheduleRefresh();
@@ -425,7 +421,7 @@
     for (const [body, entry] of messages) {
       if (activeOriginalReads >= maxOriginalReads) break;
       if (entry.id && !entry.request && !entry.original && !entry.plainText &&
-          (!entry.failed || entry.manualState === "queued")) {
+          (!entry.failed || entry.retryState === "pending")) {
         analyzeOriginal(body, entry);
       }
     }

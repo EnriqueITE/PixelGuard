@@ -85,15 +85,36 @@ test('a full scan uses the permanent ID from the message wrapper, independently 
     urls.push(new URL(url));
     return new Response(eml, { headers: { 'content-type': 'message/rfc822' } });
   });
-  assert.equal(await api.read(id, undefined, true, body), '<p>Prueba ☃</p>');
+  assert.equal(await api.read(id, undefined, body), '<p>Prueba ☃</p>');
   assert.equal(urls[0].pathname, '/mail/u/2/');
   assert.equal(urls[0].searchParams.get('view'), 'att');
   assert.equal(urls[0].searchParams.get('permmsgid'), permanent);
   assert.equal(urls[0].searchParams.has('th'), false);
   assert.equal(api.messageId(bodyWith({'data-message-id': '#' + permanent})), permanent);
-  await assert.rejects(api.read('beda', undefined, true, body), /changed/);
-  await assert.rejects(api.read('msg-a:1&th=bad', undefined, true), /Invalid/);
+  await assert.rejects(api.read('beda', undefined, body), /changed/);
+  await assert.rejects(api.read('msg-a:1&th=bad'), /Invalid/);
   assert.equal(urls.length, 1);
+});
+
+test('falls back to the actual legacy download only when the permanent download and source view are unavailable', async () => {
+  const permanent = 'msg-a:r-12345678';
+  const body = bodyWith({'data-legacy-message-id': id, 'data-message-id': '#' + permanent});
+  const permDownload = 'view=att&permmsgid=' + permanent;
+  const nativeView = 'view=om&permmsgid=' + permanent;
+  const legacyDownload = 'view=att&th=' + id;
+  for (const hint of ['', '123abc1234']) {
+    const observed = [];
+    const runtime = {sendMessage: async () => ({ok: true, hint})};
+    const api = harness(account, async url => {
+      const params = new URL(url).searchParams;
+      const key = params.has('th') ? 'th' : 'permmsgid';
+      observed.push('view=' + params.get('view') + '&' + key + '=' + params.get(key));
+      assert.equal(params.get('ik'), hint || null);
+      return params.get('th') === id ? new Response(eml) : new Response('Unavailable', {status: 404});
+    }, [], runtime);
+    assert.equal(await api.read(id, undefined, body), '<p>Prueba ☃</p>');
+    assert.deepEqual(observed, hint ? [nativeView, permDownload, legacyDownload] : [permDownload, nativeView, legacyDownload]);
+  }
 });
 
 test('only forwards an existing Gmail mailbox hint from this message on the same account', async () => {
@@ -118,14 +139,14 @@ test('only forwards an existing Gmail mailbox hint from this message on the same
       observed = new URL(url);
       return new Response(eml);
     }, nodes);
-    await api.read(id, undefined, true);
+    await api.read(id);
     assert.equal(observed.origin + observed.pathname, account.origin + account.pathname);
     assert.equal(observed.searchParams.get('ik'), expected);
     assert.equal(observed.searchParams.has('extra'), false);
   }
 });
 
-test('a manual scan uses a valid worker hint for the native source view first; auto scans never ask', async () => {
+test('the default scan reads the native source view on the first request when Gmail supplies its mailbox hint', async () => {
   let lookups = 0;
   const runtime = { sendMessage: async msg => {
     assert.deepEqual(Object.keys(msg), ['type']);
@@ -140,19 +161,13 @@ test('a manual scan uses a valid worker hint for the native source view first; a
   const api = harness(account, async url => {
     const params = new URL(url).searchParams;
     views.push(params.get('view'));
-    if (params.get('view') === 'att') {
-      assert.equal(params.has('ik'), false);
-      return new Response(eml);
-    }
     assert.equal(params.get('ik'), '123abc0000');
     assert.equal(params.get('permmsgid'), 'msg-f:' + BigInt('0x' + id));
     return new Response('<pre class="raw_message_text"></pre>', {headers: {'content-type': 'text/html'}});
   }, [], runtime, implementation);
-  await api.read(id);
-  assert.equal(lookups, 0);
-  assert.equal(await api.read(id, undefined, true), '<p>Prueba ☃</p>');
+  assert.equal(await api.read(id), '<p>Prueba ☃</p>');
   assert.equal(lookups, 1);
-  assert.deepEqual(views, ['att', 'om']);
+  assert.deepEqual(views, ['om']);
 });
 
 test('tries one download after a rejected native source, and ignores malformed or unavailable worker hints', async () => {
@@ -170,7 +185,7 @@ test('tries one download after a rejected native source, and ignores malformed o
       assert.equal(params.get('ik'), order.length === 2 ? reply.hint : null);
       return params.get('view') === 'om' ? new Response('Unavailable', {status: 404}) : new Response(eml);
     }, [], {sendMessage: async () => { if (!reply) throw Error('Worker unavailable'); return reply; }});
-    assert.equal(await api.read(id, undefined, true), '<p>Prueba ☃</p>');
+    assert.equal(await api.read(id), '<p>Prueba ☃</p>');
     assert.deepEqual(views, order);
   }
 });
@@ -185,7 +200,7 @@ test('does not request the message after it closes or the request aborts during 
       else body.isConnected = false;
       return {ok: true, hint: '123abc0000'};
     }});
-    await assert.rejects(api.read(id, cancel.signal, true, body), /cancelled|changed/);
+    await assert.rejects(api.read(id, cancel.signal, body), /cancelled|changed/);
     assert.equal(requests, 0);
   }
 });

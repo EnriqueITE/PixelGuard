@@ -88,52 +88,54 @@
     return source;
   }
 
-  async function read(id, signal, manual = false, body) {
+  async function read(id, signal, body) {
     const account = accountPath(location);
     if (!account || typeof id !== 'string' || !(HEX_ID.test(id) || PERM_ID.test(id))) throw Error('Invalid Gmail message');
-    const legacy = HEX_ID.test(id);
-    const nativeId = permanentId(body?.parentElement?.closest(MESSAGE_WRAPPER));
-    const permId = nativeId || (legacy ? 'msg-f:' + BigInt('0x' + id).toString() : id);
+    const wrapper = body?.parentElement?.closest(MESSAGE_WRAPPER);
+    const nativeId = permanentId(wrapper);
+    const permId = nativeId || (HEX_ID.test(id) ? 'msg-f:' + BigInt('0x' + id).toString() : id);
+    const hasLegacy = HEX_ID.test(wrapper ? wrapper.getAttribute('data-legacy-message-id') || '' : id);
     function checkCurrent() {
       if (signal?.aborted) throw Error('Gmail read cancelled');
       if (accountPath(location) !== account || (body && (!body.isConnected || messageId(body) !== id ||
           permanentId(body.parentElement?.closest(MESSAGE_WRAPPER)) !== nativeId))) throw Error('Gmail message changed');
     }
     checkCurrent();
-    const base = location.origin + account + '/?';
-    // A manual retry uses Gmail's permanent message ID, including when it
-    // differs from the legacy identifier used by the automatic download.
-    const param = manual || !legacy ? 'permmsgid=' + permId : 'th=' + id;
-    let hint = manual ? sourceLinkHint(account, id, permId) : '';
-    if (manual && !hint) {
+    let hint = sourceLinkHint(account, id, permId);
+    if (!hint) {
       try {
         const reply = await globalThis.chrome?.runtime?.sendMessage({type: 'pg:gmail:mailboxHint'});
         if (reply?.ok && typeof reply.hint === 'string' && MAILBOX_HINT.test(reply.hint)) hint = reply.hint;
       } catch { /* The same-account, hint-free download still works for some messages. */ }
-      checkCurrent();
     }
+    const base = location.origin + account + '/?';
     const suffix = hint ? '&ik=' + hint : '';
-    const download = base + 'view=att&' + param + '&attid=0&disp=comp&safe=1&zw' + suffix;
-    async function getOriginal(useView) {
-      if (!useView) return readSource(download, signal, false);
-      const page = await readSource(base + 'view=om&permmsgid=' + permId + suffix, signal, true);
-      // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
-      const template = document.implementation.createHTMLDocument('').createElement('template');
-      template.innerHTML = new TextDecoder('utf-8').decode(page);
-      const raw = template.content.querySelectorAll('pre.raw_message_text');
-      if (raw.length !== 1) throw Error('Gmail original unavailable');
-      return raw[0].textContent;
-    }
-    let source;
-    try {
-      source = await getOriginal(Boolean(hint));
-    } catch (error) {
-      if (signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
+    const view = base + 'view=om&permmsgid=' + permId + suffix;
+    const download = param => base + 'view=att&' + param + '&attid=0&disp=comp&safe=1&zw' + suffix;
+    const preferred = download(nativeId || !hasLegacy ? 'permmsgid=' + permId : 'th=' + id);
+    const routes = hint ? [view, preferred] : [preferred, view];
+    // Some Gmail views accept only the legacy message ID when downloading.
+    if (nativeId && hasLegacy) routes.push(download('th=' + id));
+    for (const url of routes) {
       checkCurrent();
-      source = await getOriginal(!hint);
+      let source;
+      try {
+        source = await readSource(url, signal, url === view);
+        if (url === view) {
+          // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
+          const template = document.implementation.createHTMLDocument('').createElement('template');
+          template.innerHTML = new TextDecoder('utf-8').decode(source);
+          const raw = template.content.querySelectorAll('pre.raw_message_text');
+          if (raw.length !== 1) throw Error('Gmail original unavailable');
+          source = raw[0].textContent;
+        }
+      } catch (error) {
+        if (url === routes[routes.length - 1] || signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
+        continue;
+      }
+      checkCurrent();
+      return PixelGuardOriginalMime.html(source);
     }
-    checkCurrent();
-    return PixelGuardOriginalMime.html(source);
   }
 
   globalThis.PixelGuardGmailOriginal = { messageId, read };

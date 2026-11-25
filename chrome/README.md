@@ -16,11 +16,11 @@ El escudo muestra tres posiciones, igual que en Thunderbird. La primera suma los
 
 El escudo y la barra toman el color del indicio de mayor prioridad. Un posible píxel o una imagen sospechosa tiene prioridad roja. Le siguen los enlaces con indicios de seguimiento en naranja y las imágenes externas en turquesa. Puedes desplegar el panel y filtrar por tipo. Cada fila lleva su propia etiqueta y color.
 
-Al abrir o expandir un mensaje en la pestaña visible, PixelGuard analiza lo que Gmail ya muestra. Cuando Gmail facilita el identificador del mensaje, la extensión pide automáticamente el original a Gmail usando la sesión abierta. Mientras llega, puedes ver los primeros resultados. El análisis también funciona con la barra oculta.
+Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el análisis completo. Usa la cuenta y el identificador del mensaje para pedir el original a Gmail. Mientras llega, muestra los primeros resultados de la vista del correo. El análisis también funciona con la barra oculta.
 
 PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
 
-Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. Pulsa **Analizar mensaje completo** en la propia barra, incluso cuando esté plegada. Con ese clic PixelGuard vuelve a pedir el mensaje a Gmail y despliega el resultado dentro del correo. Si el original sigue sin estar disponible, el panel lo indica y mantiene los resultados parciales. Con **Filtrar por tipo** puedes revisar las imágenes pendientes y los demás hallazgos.
+Al terminar, el detalle indica **Análisis completo**. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo. Con **Filtrar por tipo** puedes revisar las imágenes pendientes y los demás hallazgos.
 
 El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 

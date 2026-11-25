@@ -93,7 +93,7 @@ async function main() {
     await page.locator("#logo .a3s img").evaluate(img => img.removeAttribute("src"));
     await checkSummary("logo", "Partial scan", colorFor["unavailable-image"]);
     await panel("logo").getByText("Gmail hides the address of 1 image.", {exact: true}).waitFor();
-    assert.equal(await panel("logo").getByRole("button", {name: "Run full scan"}).count(), 0);
+    assert.equal(await panel("logo").getByRole("button", {name: "Retry scan"}).count(), 0);
     const unavailable = panel("logo").locator('li[data-category="unavailable-image"]');
     await panel("logo").getByRole("combobox").selectOption("unavailable-image");
     assert.equal(await unavailable.count(), 1);
