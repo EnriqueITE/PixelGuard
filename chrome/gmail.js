@@ -273,15 +273,32 @@
     const {originalBar, originalButton, originalStatus} = entry.view;
     originalBar.hidden = !entry.id;
     originalButton.hidden = !!entry.original;
-    originalButton.disabled = !!entry.request;
+    originalButton.disabled = !!entry.request || !!entry.openingNative;
+    const label = t(entry.failed ? "gmailShowNativeOriginal" : "gmailAnalyzeOriginal");
+    if (originalButton.textContent !== label) originalButton.textContent = label;
     const key = entry.request ? "gmailReadingOriginal" : entry.original ? "gmailOriginalDone" :
-      entry.failed ? "gmailOriginalFailed" : "";
+      entry.showMenuHint ? "gmailOriginalMenuHint" : entry.failed ? "gmailOriginalFailed" : "";
     const text = key ? t(key) : "";
     if (originalStatus.textContent !== text) originalStatus.textContent = text;
   }
 
   async function analyzeOriginal(body, entry) {
-    if (!entry.id || entry.request || entry.original || messages.get(body) !== entry) return;
+    if (!entry.id || entry.request || entry.original || entry.openingNative || messages.get(body) !== entry ||
+        !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
+    if (entry.failed) {
+      entry.openingNative = true;
+      originalControls(entry);
+      try {
+        await PixelGuardGmailOriginal.openNative(body);
+      } catch {
+        // Gmail may have replaced the menu. The manual menu hint still applies.
+      } finally {
+        entry.openingNative = false;
+        entry.showMenuHint = true;
+        if (messages.get(body) === entry) originalControls(entry);
+      }
+      return;
+    }
     const request = new AbortController();
     entry.request = request;
     entry.failed = false;

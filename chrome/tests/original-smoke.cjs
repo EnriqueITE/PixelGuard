@@ -15,7 +15,13 @@ const visibleHtml = '<img alt="Product"><img style="display:none">' +
   '<a href="' + click + '">Go to cart</a>';
 const shell = '<!doctype html><main role="main"><article class="adn" data-legacy-message-id="' + firstId +
   '" data-message-id="#msg-f:' + BigInt('0x' + firstId) + '">' +
-  '<span class="gD" email="sender@example.test"></span><div class="a3s">' + visibleHtml + '</div></article></main>';
+  '<div class="gE"><span class="gD" email="sender@example.test"></span>' +
+  '<button id="message-options" aria-label="More message options" aria-haspopup="menu" ' +
+  'aria-controls="message-menu" aria-expanded="false">More</button></div>' +
+  '<div class="a3s">' + visibleHtml + '</div></article></main>' +
+  '<div id="message-menu" role="menu" hidden>' +
+  '<button role="menuitem" id="display-images">Display images below</button>' +
+  '<a role="menuitem" id="show-original" target="_blank">Show original</a></div>';
 const sourceHtml = [
   '<html><head>',
   '<link rel="stylesheet" href="https://assets.example.test/mail.css">',
@@ -86,6 +92,19 @@ async function main() {
     });
     const page = await ctx.newPage();
     await page.goto(gmail + '#inbox/example-1');
+    await page.evaluate(() => {
+      const options = document.getElementById('message-options');
+      const menu = document.getElementById('message-menu');
+      options.addEventListener('click', () => {
+        options.setAttribute('aria-expanded', 'true');
+        menu.hidden = false;
+        const id = document.querySelector('.adn').getAttribute('data-message-id').slice(1);
+        document.getElementById('show-original').href = '?ik=test&view=om&permmsgid=' + id;
+      });
+      document.getElementById('display-images').addEventListener('click', () => {
+        document.body.dataset.displayImagesClicked = 'true';
+      });
+    });
     const cdp = await ctx.browser().newBrowserCDPSession();
     await cdp.send('Extensions.loadUnpacked', {path: bundle});
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
@@ -123,16 +142,20 @@ async function main() {
     await waitForBadge(worker, tabId, '001', [255, 152, 0, 255]);
     if (!(await analyze.isVisible())) await summary.click();
     await analyze.click();
-    await analyze.waitFor({state: 'visible'});
-    await page.waitForLoadState('networkidle');
+    const fallback = panel.getByRole('button', {name: 'Show original in Gmail', exact: true});
+    await fallback.waitFor();
+    assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'false');
     assert.equal(originalRequests.at(-1)?.params.th, secondId);
     assert.match(await summary.innerText(), /1 link with tracking indicators/);
     assert.match(await summary.innerText(), /partial scan/i);
     assert.equal(await panel.locator('li[data-category="tracking-pixel"]').count(), 0);
 
     const requestsBeforeOriginalPage = originalRequests.length;
-    const originalPage = await ctx.newPage();
-    await originalPage.goto(gmail + '?ik=test&view=om&permmsgid=msg-f:' + BigInt('0x' + firstId));
+    const [originalPage] = await Promise.all([page.waitForEvent('popup'), fallback.click()]);
+    await originalPage.waitForURL(url => url.searchParams.get('view') === 'om');
+    assert.equal(new URL(originalPage.url()).searchParams.get('permmsgid'), 'msg-f:' + BigInt('0x' + secondId));
+    assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'true');
+    assert.equal(await page.locator('body').getAttribute('data-display-images-clicked'), null);
     const sourcePanel = originalPage.locator('.pixelguard-gmail');
     const sourceSummary = sourcePanel.locator('summary');
     await sourceSummary.waitFor();
