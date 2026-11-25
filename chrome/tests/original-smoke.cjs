@@ -1,6 +1,7 @@
 // Scan a synthetic Gmail original with the installed extension. Intercept every
 // HTTP request in the browser context before it can reach a real server.
 const assert = require('node:assert/strict');
+const { EventEmitter, once } = require('node:events');
 const path = require('node:path');
 const { chromium } = require('playwright-core');
 
@@ -11,6 +12,7 @@ const secondId = '18b3e19bf9f5ab02';
 const delayedId = '18b3e19bf9f5ab03';
 const nativeId = '18b3e19bf9f5ab04';
 const threadIds = ['18b3e19bf9f5ab05', '18b3e19bf9f5ab06', '18b3e19bf9f5ab07'];
+const unavailableId = '18b3e19bf9f5ab08';
 const pixel = 'https://mail.shop.app/_t/open/synthetic-test-image';
 const click = 'https://mail.shop.app/_t/c/v3/UUE=';
 const image = 'https://assets.example.test/product.png';
@@ -20,7 +22,7 @@ const shell = '<!doctype html><main role="main"><article hidden class="adn" data
   '" data-message-id="#msg-f:' + BigInt('0x' + firstId) + '">' +
   '<div class="gE"><span class="gD" email="sender@example.test"></span>' +
   '<button id="message-options" aria-label="More message options" aria-haspopup="menu" ' +
-  'aria-controls="message-menu" aria-expanded="false">More</button></div>' +
+  'aria-expanded="false">More</button></div>' +
   '<div class="a3s">' + visibleHtml + '</div></article></main>' +
   '<div id="message-menu" role="menu" hidden>' +
   '<button role="menuitem" id="display-images">Display images below</button>' +
@@ -71,7 +73,12 @@ async function main() {
   try {
     const originalRequests = [];
     const sourceViewRequests = [];
-    const heldRoutes = new Map();
+    const manualRequests = [];
+    const heldRoutes = new EventEmitter();
+    // Wait for the intercept handler itself; Chromium emits the request event
+    // before Playwright gives this test the route that can supply the reply.
+    const nextRoute = id => once(heldRoutes, id, {signal: AbortSignal.timeout(10000)})
+      .then(([route]) => route);
     const external = [];
     const thirdParty = url => /^https?:/.test(url) && new URL(url).origin !== new URL(gmail).origin;
     ctx.on('request', req => { if (thirdParty(req.url())) external.push(req.url()); });
@@ -94,10 +101,16 @@ async function main() {
       }
       if (url.searchParams.get('view') === 'att') {
         const id = url.searchParams.get('th');
+        const modernId = url.searchParams.get('permmsgid');
+        if (modernId) {
+          manualRequests.push({url, method: request.method(), navigation: request.isNavigationRequest()});
+          if (heldRoutes.emit(modernId, route)) return;
+          return route.fulfill({status: 503, body: 'Unexpected manual request'});
+        }
         originalRequests.push({path: url.pathname, params: Object.fromEntries(url.searchParams), method: request.method()});
         if (id === delayedId || threadIds.includes(id)) {
-          heldRoutes.set(id, route);
-          return;
+          if (heldRoutes.emit(id, route)) return;
+          return route.fulfill({status: 503, body: 'Unexpected request'});
         }
         if (id !== firstId) return route.fulfill({status: 503, body: 'Unavailable'});
         return route.fulfill({contentType: 'message/rfc822', body: raw});
@@ -141,12 +154,11 @@ async function main() {
     const pixelRow = panel.locator('li[data-category="tracking-pixel"]');
     await pixelRow.waitFor();
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
-    await panel.getByText('Original analyzed', {exact: true}).waitFor();
     assert.match(await summary.innerText(), /1 possible tracking pixel/);
     assert.match(await summary.innerText(), /1 link with tracking indicators/);
     assert.doesNotMatch(await summary.innerText(), /images without a URL|partial scan/i);
     await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
-    assert.deepEqual(originalRequests, [{path: '/mail/u/1',
+    assert.deepEqual(originalRequests, [{path: '/mail/u/1/',
       params: {view: 'att', th: firstId, attid: '0', disp: 'comp', safe: '1', zw: ''}, method: 'GET'}]);
     assert.deepEqual(sourceViewRequests, [], 'Only use the second Gmail endpoint if the first is unavailable');
     assert.deepEqual(await page.locator('.a3s img').evaluateAll(imgs => imgs.map(i => i.getAttribute('src'))), [null, null]);
@@ -172,27 +184,28 @@ async function main() {
     assert.equal(new URL(page.url()).search, '');
 
     // Gmail can reuse the same DOM for a different message during a request.
-    const delayedRequest = page.waitForRequest(req => new URL(req.url()).searchParams.get('th') === delayedId);
+    const delayedRequest = nextRoute(delayedId);
     await page.locator('.adn').evaluate((el, id) => {
       el.setAttribute('data-legacy-message-id', id);
       el.setAttribute('data-message-id', '#msg-f:' + BigInt('0x' + id));
       el.querySelector('.a3s').textContent = 'No visible images or links';
     }, delayedId);
-    await delayedRequest;
+    const delayedRoute = await delayedRequest;
     const pageCount = ctx.pages().length;
     await page.locator('.adn').evaluate((el, id) => {
       el.setAttribute('data-legacy-message-id', id);
       el.setAttribute('data-message-id', '#msg-f:' + BigInt('0x' + id));
       location.hash = 'inbox/example-2';
       el.querySelector('.a3s').innerHTML =
-        '<img alt="Unloaded"><a href="https://click.example.test/redirect">Second link</a>';
+        '<img alt="Unloaded">'.repeat(5) + '<a href="https://click.example.test/redirect">Second link</a>';
     }, secondId);
-    await page.waitForFunction(() => document.querySelector('.pg-status')?.textContent.includes('1 image without a URL'));
+    await page.waitForFunction(() =>
+      document.querySelector('.pg-status')?.textContent === '1 link with tracking indicators · Partial scan');
     await waitForBadge(worker, tabId, '001', [255, 152, 0, 255]);
-    if (await panel.getAttribute('open') === null) await summary.click();
-    const fallback = panel.getByRole('button', {name: 'Show original in Gmail', exact: true});
-    await fallback.waitFor();
-    await heldRoutes.get(delayedId).fulfill({contentType: 'message/rfc822', body: raw});
+    const fullScan = panel.getByRole('button', {name: 'Run full scan', exact: true});
+    assert.equal(await panel.getAttribute('open'), null, 'The panel starts collapsed for a new message');
+    await fullScan.waitFor();
+    await delayedRoute.fulfill({contentType: 'message/rfc822', body: raw});
     await page.waitForLoadState('networkidle');
     assert.equal(ctx.pages().length, pageCount, 'An automatic failure must not open another tab');
     assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'false');
@@ -200,35 +213,66 @@ async function main() {
       'Each expanded message should be requested just once, including after failure');
     assert.deepEqual(sourceViewRequests.map(req => req.id), [nativeId, secondId].map(id => 'msg-f:' + BigInt('0x' + id)),
       'A replaced message must not fall back to the source view');
-    assert.match(await summary.innerText(), /1 link with tracking indicators/);
-    assert.match(await summary.innerText(), /partial scan/i);
+    assert.equal(await panel.locator('.pg-note').count(), 0);
     assert.equal(await panel.locator('li[data-category="tracking-pixel"]').count(), 0);
 
-    const requestsBeforeOriginalPage = originalRequests.length;
-    const [originalPage] = await Promise.all([page.waitForEvent('popup'), fallback.click()]);
-    await originalPage.waitForURL(url => url.searchParams.get('view') === 'om');
-    assert.equal(new URL(originalPage.url()).searchParams.get('permmsgid'), 'msg-f:' + BigInt('0x' + secondId));
-    assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'true');
+    const unexpectedPages = [];
+    ctx.on('page', tab => unexpectedPages.push(tab));
+    const initialUrl = page.url();
+    const messageKey = 'msg-f:' + BigInt('0x' + secondId);
+    const [manualRoute] = await Promise.all([nextRoute(messageKey), fullScan.click()]);
+    await panel.getByText('Running full scan…', {exact: true}).waitFor();
+    assert.equal(await fullScan.isDisabled(), true);
+    await manualRoute.fulfill({contentType: 'message/rfc822', body: raw});
+    await panel.getByText('Full scan complete', {exact: true}).waitFor();
+    assert.notEqual(await panel.getAttribute('open'), null, 'The single click reveals the results');
+    assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
+    assert.doesNotMatch(await summary.innerText(), /partial scan/i);
+    assert.equal(await fullScan.count(), 0);
+    await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    assert.equal(manualRequests.length, 1);
+    const manual = manualRequests[0];
+    assert.equal(manual.url.origin + manual.url.pathname, gmail);
+    assert.equal(manual.url.searchParams.get('th'), null);
+    assert.equal(manual.url.searchParams.get('permmsgid'), messageKey);
+    assert.equal(manual.method, 'GET');
+    assert.equal(manual.navigation, false);
+    assert.equal(page.url(), initialUrl);
+    assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('#message-menu').isVisible(), false);
     assert.equal(await page.locator('body').getAttribute('data-display-images-clicked'), null);
-    const sourcePanel = originalPage.locator('.pixelguard-gmail');
-    const sourceSummary = sourcePanel.locator('summary');
-    await sourceSummary.waitFor();
-    if (await sourcePanel.getAttribute('open') === null) await sourceSummary.click();
-    await sourcePanel.getByText('Original analyzed', {exact: true}).waitFor();
-    assert.equal(await sourcePanel.locator('li[data-category="tracking-pixel"] .pg-url').innerText(), pixel);
-    const sourceTabId = await worker.evaluate(async () =>
-      (await chrome.tabs.query({url: 'https://mail.google.com/mail/u/1/*'})).find(t => t.url.includes('view=om')).id);
-    await waitForBadge(worker, sourceTabId, '111', [229, 57, 53, 255]);
-    await originalPage.waitForLoadState('networkidle');
-    assert.equal(originalRequests.length, requestsBeforeOriginalPage, 'Use the original already displayed on this page');
-    await originalPage.close();
-    await page.bringToFront();
+
+    // A fast second click while Gmail is responding must not start another
+    // scan. A permanent failure leaves the available findings in the same panel.
+    await page.locator('.adn').evaluate((el, id) => {
+      el.dataset.legacyMessageId = id;
+      el.dataset.messageId = '#msg-f:' + BigInt('0x' + id);
+    }, unavailableId);
+    await fullScan.waitFor();
+    assert.equal(await panel.getAttribute('open'), null);
+    const failedKey = 'msg-f:' + BigInt('0x' + unavailableId);
+    const [failedRoute] = await Promise.all([nextRoute(failedKey), fullScan.dblclick()]);
+    await failedRoute.fulfill({status: 503, body: 'Unavailable'});
+    await panel.getByText('Could not complete the scan. Showing partial results.', {exact: true}).waitFor();
+    await page.waitForLoadState('networkidle');
+    await fullScan.waitFor();
+    assert.notEqual(await panel.getAttribute('open'), null, 'An inline failure should also be visible');
+    assert.doesNotMatch(await panel.innerText(), /Full scan complete|⋮|menu/i);
+    assert.match(await summary.innerText(), /1 link with tracking indicators · Partial scan/);
+    const filter = panel.getByRole('combobox', {name: 'Filter by type', exact: false});
+    assert.match(await filter.locator('option:checked').innerText(), /\(6\)/);
+    await waitForBadge(worker, tabId, '001', [255, 152, 0, 255]);
+    assert.deepEqual(manualRequests.map(({url}) => url.searchParams.get('permmsgid')), [messageKey, failedKey]);
+    assert.equal(unexpectedPages.length, 0, 'No scan opens a new tab at any point');
+    assert.equal(page.url(), initialUrl);
+    assert.equal(await page.locator('#message-menu').isVisible(), false);
+    assert.equal(await page.locator('body').getAttribute('data-display-images-clicked'), null);
+    const requestsBeforeThread = originalRequests.length;
 
     // Three messages expand together; the third collapses while the first two
     // are still waiting for Gmail. Its queued download must never start.
     const firstTwo = threadIds.slice(0, 2);
-    const firstTwoRequests = Promise.all(firstTwo.map(id =>
-      page.waitForRequest(req => new URL(req.url()).searchParams.get('th') === id)));
+    const firstTwoRequests = Promise.all(firstTwo.map(nextRoute));
     await page.locator('main').evaluate((main, ids) => {
       main.replaceChildren();
       for (const id of ids) {
@@ -238,15 +282,25 @@ async function main() {
         main.append(article);
       }
     }, threadIds);
-    await firstTwoRequests;
+    const firstTwoRoutes = await firstTwoRequests;
     await page.locator('article').last().evaluate(el => el.hidden = true);
     await page.locator('article').last().locator('.pixelguard-gmail').waitFor({state: 'detached'});
-    await Promise.all(firstTwo.map(id => heldRoutes.get(id).fulfill({contentType: 'message/rfc822', body: raw})));
+    await Promise.all(firstTwoRoutes.map(route => route.fulfill({contentType: 'message/rfc822', body: raw})));
     await waitForBadge(worker, tabId, '222', [229, 57, 53, 255]);
     await page.waitForLoadState('networkidle');
-    assert.deepEqual(originalRequests.slice(requestsBeforeOriginalPage).map(req => req.params.th).sort(), firstTwo);
+    assert.deepEqual(originalRequests.slice(requestsBeforeThread).map(req => req.params.th).sort(), firstTwo);
+
+    // Gmail users can still choose its own source view independently. Analyze
+    // the source already present there without performing another download.
+    const requestCount = originalRequests.length + manualRequests.length + sourceViewRequests.length;
+    await page.goto(gmail + '?view=om&permmsgid=' + messageKey);
+    await panel.locator('summary').click();
+    assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
+    await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    await page.waitForLoadState('networkidle');
+    assert.equal(originalRequests.length + manualRequests.length + sourceViewRequests.length, requestCount);
     assert.deepEqual(external, [], 'The context must never request a sender, image or embedded resource URL');
-    console.log('PASS automatic originals, hidden-panel badge, message switches, manual fallback and zero external requests', ctx.browser().version());
+    console.log('PASS automatic originals, one-click inline full scan, persistent failure, and zero external requests', ctx.browser().version());
   } finally {
     await ctx.close();
   }

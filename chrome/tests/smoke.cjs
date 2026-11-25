@@ -91,8 +91,9 @@ async function main() {
     }
     // Mutate the existing thread in place, as a single-page mail client does.
     await page.locator("#logo .a3s img").evaluate(img => img.removeAttribute("src"));
-    await checkSummary("logo", "1 image without a URL · Partial scan", colorFor["unavailable-image"]);
-    assert.match(await panel("logo").locator("p").innerText(), /Gmail: 1\./);
+    await checkSummary("logo", "Partial scan", colorFor["unavailable-image"]);
+    await panel("logo").getByText("Gmail hides the address of 1 image.", {exact: true}).waitFor();
+    assert.equal(await panel("logo").getByRole("button", {name: "Run full scan"}).count(), 0);
     const unavailable = panel("logo").locator('li[data-category="unavailable-image"]');
     await panel("logo").getByRole("combobox").selectOption("unavailable-image");
     assert.equal(await unavailable.count(), 1);
@@ -102,7 +103,7 @@ async function main() {
     await page.locator("#logo .a3s img").evaluate(img => img.src = "https://cdn.example.test/brand/logo.png");
     await panel("logo").getByRole("combobox").selectOption("all");
     await check("logo", logoSummary, /external image/i, "external-image");
-    assert.equal(await panel("logo").locator("p").isVisible(), false);
+    assert.equal(await panel("logo").locator(".pg-original").isVisible(), false);
     await page.locator("#pixel img[src^='https']").evaluate(img => {
       img.src = "https://ci3.googleusercontent.com/meips/example#" + img.src;
     });
@@ -286,11 +287,11 @@ async function main() {
         body.append(image);
       }
     });
-    await checkSummary("link", "31 links with tracking indicators · 23 images without a URL · Partial scan", colorFor["tracking-link"]);
+    await checkSummary("link", "31 links with tracking indicators · Partial scan", colorFor["tracking-link"]);
     await checkBadge(probe, tabId, "00+", badgeColors.orange);
     const shop = panel("link");
     await shop.locator("summary").click();
-    assert.match(await shop.locator(".pg-note").innerText(), /marks one of these images as hidden/i);
+    await shop.locator(".pg-original").getByText("Gmail hides the addresses of 23 images.", {exact: true}).waitFor();
     await shop.getByRole("combobox").selectOption("unavailable-image");
     const hidden = shop.locator('li[data-category="unavailable-image"]').filter({hasText: /display:\s*none/i});
     assert.equal(await hidden.count(), 1);

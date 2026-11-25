@@ -2,98 +2,52 @@
 (() => {
   const SOURCE_LIMIT = 8 * 1024 * 1024;
   const HEX_ID = /^[\da-f]{1,16}$/i;
+  const PERM_ID = /^(?:msg-f:\d{1,20}|msg-a:[\w-]{1,64})$/;
   const MESSAGE_WRAPPER = '[data-legacy-message-id], [data-message-id]';
-  const EXCLUDED_UI = '.a3s, .pixelguard-gmail, [role="textbox"], [contenteditable]:not([contenteditable="false"]), [g_editable="true"]';
-  const MENU_LABELS = new Set(['More message options', 'More options for this message', 'Más opciones de mensajes']);
-  const ORIGINAL_LABELS = new Set(['Show original', 'Mostrar original']);
+  function accountPath(page) {
+    if (page.origin !== 'https://mail.google.com') return null;
+    return /^\/mail\/u\/\d+(?=\/|$)/.exec(page.pathname)?.[0] || null;
+  }
 
-  function accountPath() {
-    if (location.origin !== 'https://mail.google.com') return null;
-    return /^\/mail\/u\/\d+(?=\/|$)/.exec(location.pathname)?.[0] || null;
+  function permanentId(wrapper) {
+    const id = (wrapper?.getAttribute('data-message-id') || '').replace(/^#/, '');
+    return PERM_ID.test(id) ? id : '';
   }
 
   function messageId(body) {
-    if (!accountPath()) return null;
+    if (!accountPath(location)) return null;
     // Gmail puts these identifiers outside the sender-controlled message HTML.
     const wrapper = body.parentElement?.closest(MESSAGE_WRAPPER);
     if (!wrapper) return null;
     const legacy = wrapper.getAttribute('data-legacy-message-id') || '';
     if (HEX_ID.test(legacy)) return legacy.toLowerCase();
-    const modern = /^#?msg-f:(\d{1,20})$/.exec(wrapper.getAttribute('data-message-id') || '');
+    const modern = permanentId(wrapper);
     if (!modern) return null;
-    const hex = BigInt(modern[1]).toString(16);
+    if (modern.startsWith('msg-a:')) return modern;
+    const hex = BigInt(modern.slice(6)).toString(16);
     return HEX_ID.test(hex) ? hex : null;
   }
 
-  function visibleControl(node) {
-    if (node.closest(EXCLUDED_UI) || node.closest('[hidden], [inert], [aria-hidden="true"]') ||
-        node.matches(':disabled, [aria-disabled="true"]') || !node.getClientRects().length) return false;
-    return getComputedStyle(node).visibility === 'visible';
-  }
-
-  function visibleMenus() {
-    return [...document.querySelectorAll('[role="menu"]')].filter(visibleControl);
-  }
-
-  function originalItem(menu, id) {
-    const items = [...menu.querySelectorAll('[role="menuitem"]')].filter(node =>
-      node.closest('[role="menu"]') === menu && visibleControl(node) &&
-      ORIGINAL_LABELS.has((node.getAttribute('aria-label') || node.innerText || '').trim()));
-    if (items.length !== 1) return null;
-    const item = items[0];
-    // An anchor is eligible only when it points to Gmail's source view for
-    // this exact message and this account. Otherwise leave the choice to the user.
-    const anchors = [item.closest('a[href]'), ...item.querySelectorAll('a[href]')].filter(Boolean);
-    for (const anchor of anchors) {
-      if (anchor.hasAttribute('ping') || anchor.hasAttribute('attributionsrc') || anchor.hasAttribute('download')) return null;
+  function sourceLinkHint(account, id, permId) {
+    // Reuse Gmail's mailbox hint only when it is already in this account's
+    // address bar or an original-message link for this specific message.
+    const validHint = /^[a-zA-Z0-9_-]{1,64}$/;
+    const own = new URL(location.href);
+    const hint = own.searchParams.get('ik') || '';
+    if (validHint.test(hint)) return hint;
+    for (const anchor of document.querySelectorAll('a[href*="ik="][href*="view="]')) {
+      if (anchor.closest('.a3s, .pixelguard-gmail, [role="textbox"], [contenteditable]')) continue;
       let url;
-      try { url = new URL(anchor.getAttribute('href'), location.href); } catch { return null; }
-      if (url.origin !== location.origin || url.username || url.password || url.pathname.replace(/\/$/, '') !== accountPath() ||
-          url.searchParams.get('view') !== 'om' ||
-          url.searchParams.get('permmsgid') !== 'msg-f:' + BigInt('0x' + id).toString()) return null;
+      try { url = new URL(anchor.getAttribute('href'), own); } catch { continue; }
+      if (url.origin !== own.origin || url.pathname.replace(/\/$/, '') !== account) continue;
+      const params = url.searchParams;
+      const view = params.get('view');
+      if (view !== 'om' && !(view === 'att' && params.get('attid') === '0' && params.get('disp') === 'comp')) continue;
+      if (params.has('permmsgid') ? params.get('permmsgid') !== permId : params.get('th') !== id) continue;
+      const value = params.get('ik') || '';
+      if (validHint.test(value)) return value;
     }
-    return item;
-  }
-
-  async function openNative(body) {
-    const id = messageId(body);
-    const message = body.parentElement?.closest(MESSAGE_WRAPPER);
-    if (!id || !body.isConnected || !message || body.parentElement.closest(EXCLUDED_UI) || visibleMenus().length) return false;
-    const buttons = [...message.querySelectorAll('button[aria-label], [role="button"][aria-label]')].filter(node =>
-      node.closest(MESSAGE_WRAPPER) === message && !node.closest('a[href], form') && visibleControl(node) &&
-      (node.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-      MENU_LABELS.has(node.getAttribute('aria-label')));
-    if (buttons.length !== 1) return false;
-    const control = buttons[0];
-    if (control.getAttribute('aria-expanded') === 'true') return false;
-    control.click();
-
-    // Gmail sometimes attaches a menu to the document asynchronously. Only
-    // select an item when the menu belongs to the original header control or
-    // the same message. Unassociated popovers stay open for manual selection.
-    const deadline = Date.now() + 700;
-    do {
-      if (!body.isConnected || messageId(body) !== id || document.hidden) return false;
-      const menus = visibleMenus();
-      if (menus.length) {
-        if (menus.length !== 1) return false;
-        const menu = menus[0];
-        const owned = [control.getAttribute('aria-controls'), control.getAttribute('aria-owns')]
-          .filter(Boolean).join(' ').split(/\s+/).filter(Boolean);
-        const labelled = (menu.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
-        const wrapper = menu.closest(MESSAGE_WRAPPER);
-        if (wrapper && wrapper !== message) return false;
-        if (owned.length && !owned.includes(menu.id)) return false;
-        if (labelled.length && !labelled.includes(control.id)) return false;
-        if (!owned.length && !labelled.length && wrapper !== message) return false;
-        const item = originalItem(menu, id);
-        if (!item) return false;
-        item.click();
-        return true;
-      }
-      await new Promise(resolve => setTimeout(resolve, 40));
-    } while (Date.now() < deadline);
-    return false;
+    return '';
   }
 
   async function readSource(url, signal, expectHtmlPage) {
@@ -134,20 +88,26 @@
     return source;
   }
 
-  async function read(id, signal) {
-    const account = accountPath();
-    if (!account || typeof id !== 'string' || !HEX_ID.test(id)) throw Error('Invalid Gmail message');
-    const base = location.origin + account;
-    // The download uses this individual message's hex ID; the original view
-    // uses the same 64 bits in decimal. Neither URL comes from the email.
-    const download = base + '?view=att&th=' + id + '&attid=0&disp=comp&safe=1&zw';
+  async function read(id, signal, manual = false, body) {
+    const account = accountPath(location);
+    if (!account || typeof id !== 'string' || !(HEX_ID.test(id) || PERM_ID.test(id))) throw Error('Invalid Gmail message');
+    if (body && (!body.isConnected || messageId(body) !== id)) throw Error('Gmail message changed');
+    const legacy = HEX_ID.test(id);
+    const nativeId = permanentId(body?.parentElement?.closest(MESSAGE_WRAPPER));
+    const permId = nativeId || (legacy ? 'msg-f:' + BigInt('0x' + id).toString() : id);
+    const base = location.origin + account + '/?';
+    // A manual retry uses Gmail's permanent message ID, including when it
+    // differs from the legacy identifier used by the automatic download.
+    const param = manual || !legacy ? 'permmsgid=' + permId : 'th=' + id;
+    const hint = manual ? sourceLinkHint(account, id, permId) : '';
+    const suffix = hint ? '&ik=' + hint : '';
+    const download = base + 'view=att&' + param + '&attid=0&disp=comp&safe=1&zw' + suffix;
     let source;
     try {
       source = await readSource(download, signal, false);
     } catch (error) {
       if (signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;
-      const view = base + '/?view=om&permmsgid=msg-f:' + BigInt('0x' + id).toString();
-      const page = await readSource(view, signal, true);
+      const page = await readSource(base + 'view=om&permmsgid=' + permId + suffix, signal, true);
       // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
       const template = document.implementation.createHTMLDocument('').createElement('template');
       template.innerHTML = new TextDecoder('utf-8').decode(page);
@@ -158,5 +118,5 @@
     return PixelGuardOriginalMime.html(source);
   }
 
-  globalThis.PixelGuardGmailOriginal = { messageId, read, openNative };
+  globalThis.PixelGuardGmailOriginal = { messageId, read };
 })();

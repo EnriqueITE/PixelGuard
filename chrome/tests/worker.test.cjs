@@ -12,6 +12,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 function harness(shared = { data: {} }) {
   const data = shared.data;
   const requests = [];
+  const openedTabs = [];
   const broadcasts = [];
   const badges = new Map();
   function setBadge(tabId, patch) {
@@ -20,7 +21,7 @@ function harness(shared = { data: {} }) {
   }
   const origin = 'chrome-extension://sample/';
   const popup = { id: 'sample', url: origin + 'popup.html' };
-  const gmail = { id: 'sample', url: 'https://mail.google.com/mail/u/0/', frameId: 0, tab: { id: 1 } };
+  const gmail = { id: 'sample', url: 'https://mail.google.com/mail/u/0/', frameId: 0, tab: { id: 1, windowId: 3 } };
   let handler, revoked, access, permission = false;
   const chrome = {
     runtime: { id: 'sample', getURL: p => origin + p, getManifest: () => ({ name: 'PixelGuard for Gmail' }),
@@ -44,7 +45,11 @@ function harness(shared = { data: {} }) {
       },
       async remove(key) { assert.equal(access, 'TRUSTED_CONTEXTS'); delete data[key]; }
     } },
-    tabs: { async query() { return [{ id: 1 }, { id: 2 }]; }, async sendMessage(id, msg) { broadcasts.push(clone(msg)); } },
+    tabs: {
+      async query() { return [{ id: 1 }, { id: 2 }]; },
+      async sendMessage(id, msg) { broadcasts.push(clone(msg)); },
+      async create(options) { openedTabs.push(clone(options)); }
+    },
     permissions: { async contains(p) {
       assert.deepEqual(clone(p), { origins: ['https://www.virustotal.com/*'] });
       return permission;
@@ -72,8 +77,11 @@ function harness(shared = { data: {} }) {
     })
   });
   vm.runInContext(fs.readFileSync(path.join(root, 'chrome/worker.js'), 'utf8'), context);
-  const send = (type, fields = {}, sender = popup) => new Promise(resolve => handler({ type, ...fields }, sender, value => resolve(clone(value))));
-  return { send, data, broadcasts, requests, gmail, badges,
+  const send = (type, fields = {}, sender = popup) => new Promise(resolve => {
+    const asyncReply = handler({ type, ...fields }, sender, value => resolve(clone(value)));
+    if (!asyncReply) resolve(undefined);
+  });
+  return { send, data, broadcasts, requests, gmail, badges, openedTabs,
     grant() { permission = true; },
     revoke() { permission = false; revoked({ origins: ['https://www.virustotal.com/*'] }); }
   };
@@ -128,6 +136,12 @@ test('only an active top-level Gmail document can publish valid badge counts', a
     assert.equal((await h.send('pg:badge', { ...counts, links: bad }, h.gmail)).error, 'unavailable');
   }
   assert.equal(h.badges.size, 0);
+});
+
+test('ignores requests from older content scripts to open the original in another tab', async () => {
+  const h = harness();
+  assert.equal(await h.send('pg:openOriginal', { messageId: 'fedcbafeedac1234' }, h.gmail), undefined);
+  assert.deepEqual(h.openedTabs, []);
 });
 
 test('saving a key stays offline, and enabling requires separate permission', async () => {

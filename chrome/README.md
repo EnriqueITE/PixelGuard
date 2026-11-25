@@ -20,7 +20,7 @@ Al abrir o expandir un mensaje en la pestaña visible, PixelGuard analiza lo que
 
 PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
 
-Si falla la descarga directa, PixelGuard intenta leer en segundo plano la página **Mostrar original** de Gmail. Si esa lectura también falla, conserva los hallazgos de la vista del mensaje. Puedes abrir el original con **Mostrar original en Gmail** o desde el menú ⋮ del mensaje. PixelGuard analiza el texto en la pestaña que abre Gmail.
+Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. Pulsa **Analizar mensaje completo** en la propia barra, incluso cuando esté plegada. Con ese clic PixelGuard vuelve a pedir el mensaje a Gmail y despliega el resultado dentro del correo. Si el original sigue sin estar disponible, el panel lo indica y mantiene los resultados parciales. Con **Filtrar por tipo** puedes revisar las imágenes pendientes y los demás hallazgos.
 
 El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 

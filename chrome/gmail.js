@@ -18,8 +18,7 @@
     "tracking-pixel": ["gmailPixel", "gmailPixels"],
     "suspicious-image": ["gmailImage", "gmailImages"],
     "tracking-link": ["gmailLink", "gmailLinks"],
-    "external-image": ["gmailExternalImage", "gmailExternalImages"],
-    "unavailable-image": ["gmailMissingImage", "gmailMissingImages"]
+    "external-image": ["gmailExternalImage", "gmailExternalImages"]
   };
   const filterLabels = {
     all: "gmailAllFindings",
@@ -62,7 +61,7 @@
     return control;
   }
 
-  function createPanel(onShowNativeOriginal) {
+  function createPanel(onFullScan) {
     const panel = element("details", "pixelguard-gmail");
     const summary = element("summary");
     const logo = element("img");
@@ -71,18 +70,21 @@
     const status = element("span", "pg-status");
     const chevron = element("i", "pg-chevron");
     chevron.setAttribute("aria-hidden", "true");
-    summary.append(logo, element("strong", "", "PixelGuard"), status, chevron);
-    const note = element("p", "pg-note");
+    const originalButton = button(t("gmailFullScan"));
+    originalButton.className = "pg-full-scan";
+    originalButton.hidden = true;
+    if (onFullScan) originalButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.isTrusted) onFullScan();
+    });
+    summary.append(logo, element("strong", "", "PixelGuard"), status, originalButton, chevron);
+    const tools = element("div", "pg-tools");
     const originalBar = element("div", "pg-original");
-    const originalButton = button(t("gmailShowNativeOriginal"));
     const originalStatus = element("span");
     originalStatus.setAttribute("role", "status");
-    originalBar.append(originalButton, originalStatus);
+    originalBar.append(originalStatus);
     originalBar.hidden = true;
-    originalButton.hidden = true;
-    if (onShowNativeOriginal) originalButton.addEventListener("click", event => {
-      if (event.isTrusted) onShowNativeOriginal();
-    });
     const filterBar = element("label", "pg-filter");
     const filter = element("select");
     for (const value of Object.keys(filterLabels)) {
@@ -100,8 +102,9 @@
     const range = element("span", "pg-range");
     range.setAttribute("aria-live", "polite");
     footer.append(range, prev, next);
-    panel.append(summary, note, originalBar, filterBar, list, empty, footer);
-    const state = {panel, summary, status, note, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    tools.append(originalBar, filterBar);
+    panel.append(summary, tools, list, empty, footer);
+    const state = {panel, summary, status, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
@@ -168,7 +171,7 @@
     if (pages > 1) range.textContent = t("gmailRange", String(start + 1), String(Math.min(start + pageSize, entries.length)), String(entries.length));
   }
 
-  function render(state, body, result, originalLabels) {
+  function render(state, body, result, originalLabels, originalFailed = false) {
     const items = [...result.suspicious, ...result.links, ...result.externals];
     const counts = new Map();
     for (const item of items) counts.set(item.classification, (counts.get(item.classification) || 0) + 1);
@@ -177,6 +180,7 @@
     const unavailable = originalLabels ? [] : [...body.querySelectorAll("img")].filter(img =>
       !sources.some(attr => img.getAttribute(attr)?.trim()));
     const missing = unavailable.length;
+    state.missing = missing;
     counts.set("unavailable-image", missing);
     const totals = [];
     for (const [type, labels] of Object.entries(categories)) {
@@ -186,9 +190,9 @@
       total.dataset.category = type;
       totals.push(total);
     }
-    state.summary.dataset.category = totals[0]?.dataset.category || "";
-    if (!result.suspicious.length && !result.links.length && !missing) totals.unshift(t("gmailNoSignals"));
-    if (missing) totals.push(element("span", "", t("gmailPartial")));
+    state.summary.dataset.category = totals[0]?.dataset.category || (missing ? "unavailable-image" : "");
+    if (missing || originalFailed) totals.push(t("gmailPartial"));
+    else if (!result.suspicious.length && !result.links.length) totals.unshift(t("gmailNoSignals"));
     state.status.replaceChildren(...totals.flatMap((total, index) => index ? [" · ", total] : [total]));
     for (const option of state.filter.options) {
       const count = option.value === "all" ? items.length + missing : counts.get(option.value) || 0;
@@ -212,7 +216,6 @@
       if (!reasons.length && item.classification === "external-image") reasons.push(t("reason_visibleRemote"));
       return {item, label: labels.get(item.url), reason: reasons.join(" · ")};
     });
-    let hiddenMissing = 0;
     unavailable.forEach((img, index) => {
       const description = [img.alt, img.getAttribute("aria-label"), img.title].find(text => text?.trim());
       const label = description?.trim().slice(0, 180) || t("gmailUnnamedImage", String(index + 1));
@@ -220,15 +223,9 @@
       const height = img.getAttribute("height");
       const size = /^\d{1,5}$/.test(width) && /^\d{1,5}$/.test(height) ? width + " × " + height + " px" : "";
       const hiddenReason = explicitHiddenReason(img);
-      if (hiddenReason) hiddenMissing++;
       const reason = [hiddenReason, size].filter(Boolean).join(" · ");
       state.entries.push({item: {classification: "unavailable-image"}, label, reason});
     });
-    const notes = [];
-    if (missing) notes.push(t("gmailUnavailableImages", String(missing)));
-    if (hiddenMissing === 1) notes.push(t("gmailOneHiddenMissing"));
-    if (hiddenMissing > 1) notes.push(t("gmailSeveralHiddenMissing", String(hiddenMissing)));
-    state.note.textContent = notes.join(" ");
     drawPage(state);
   }
 
@@ -272,50 +269,56 @@
 
   function originalControls(entry) {
     if (!entry.view) return;
-    const {originalBar, originalButton, originalStatus} = entry.view;
-    originalBar.hidden = !entry.id;
+    const {originalBar, originalButton, originalStatus, missing} = entry.view;
     originalButton.hidden = !entry.failed;
-    originalButton.disabled = !!entry.openingNative;
-    const key = entry.original ? "gmailOriginalDone" : entry.plainText ? "gmailPlainSource" :
-      entry.showMenuHint ? "gmailOriginalMenuHint" : entry.failed ? "gmailOriginalFailed" : "gmailReadingOriginal";
-    const text = t(key);
+    const manualPending = entry.manualState === "queued" || entry.manualState === "reading";
+    originalButton.disabled = manualPending;
+    let text = "";
+    if (manualPending) text = t("gmailFullScanRunning");
+    else if (entry.manualState === "complete") text = t("gmailFullScanComplete");
+    else if (entry.manualState === "failed") text = t("gmailFullScanFailed");
+    else if (entry.manualState === "plain") text = t("gmailPlainSource");
+    else if (entry.id && !entry.original && !entry.failed && !entry.plainText) text = t("gmailReadingOriginal");
+    else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") : t("gmailUnavailableImages", String(missing));
+    else if (entry.failed) text = t("gmailOriginalFailed");
+    originalBar.hidden = !text;
     if (originalStatus.textContent !== text) originalStatus.textContent = text;
   }
 
-  async function showNativeOriginal(body, entry) {
-    if (!entry.failed || entry.openingNative || messages.get(body) !== entry ||
+  function requestFullScan(body, entry) {
+    if (!entry.failed || entry.request || entry.manualState === "queued" || messages.get(body) !== entry ||
         !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
-    entry.openingNative = true;
+    entry.manualState = "queued";
+    entry.view.panel.open = true;
     originalControls(entry);
-    try {
-      await PixelGuardGmailOriginal.openNative(body);
-    } catch {
-      // Gmail may have replaced the menu. The manual menu hint still applies.
-    } finally {
-      entry.openingNative = false;
-      entry.showMenuHint = true;
-      if (messages.get(body) === entry) originalControls(entry);
-    }
+    scheduleRefresh();
   }
 
   async function analyzeOriginal(body, entry) {
     const request = new AbortController();
+    const manual = entry.manualState === "queued";
+    if (manual) entry.manualState = "reading";
     activeOriginalReads++;
     entry.request = request;
     const timeout = setTimeout(() => request.abort(), 20000);
     try {
-      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal);
-      if (request.signal.aborted || !body.isConnected || messages.get(body) !== entry ||
+      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, manual, body);
+      request.signal.throwIfAborted();
+      if (!body.isConnected || messages.get(body) !== entry ||
           PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
       entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
-      if (entry.view?.filter.value === "unavailable-image") {
+      entry.failed = false;
+      if (manual) entry.manualState = "complete";
+      if (entry.view && (manual || entry.view.filter.value === "unavailable-image")) {
         entry.view.filter.value = "all";
         entry.view.page = 0;
       }
       dirty.add(body);
     } catch (error) {
-      entry.plainText = error.name === "PlainTextOriginal";
+      entry.plainText = error?.name === "PlainTextOriginal";
       entry.failed = !entry.plainText;
+      if (manual) entry.manualState = entry.plainText ? "plain" : "failed";
+      if (messages.get(body) === entry) dirty.add(body);
     } finally {
       clearTimeout(timeout);
       entry.request = null;
@@ -351,8 +354,6 @@
       const view = createPanel();
       if (result) {
         render(view, null, result, record.scan.labels);
-        view.originalBar.hidden = false;
-        view.originalStatus.textContent = t("gmailOriginalDone");
       } else {
         view.status.textContent = t(record.plainText ? "gmailPlainSource" : "gmailOriginalUnsupported");
         view.filterBar.hidden = view.footer.hidden = view.empty.hidden = true;
@@ -400,10 +401,10 @@
       links += result.links.length;
       if (showPanel) {
         const mount = !entry.view;
-        if (mount) entry.view = createPanel(() => showNativeOriginal(body, entry));
+        if (mount) entry.view = createPanel(() => requestFullScan(body, entry));
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
         if (updated || mount) {
-          render(entry.view, body, result, entry.original?.labels);
+          render(entry.view, body, result, entry.original?.labels, entry.failed);
           originalControls(entry);
         }
       } else if (entry.view) {
@@ -423,7 +424,8 @@
     if (document.hidden) return;
     for (const [body, entry] of messages) {
       if (activeOriginalReads >= maxOriginalReads) break;
-      if (entry.id && !entry.request && !entry.original && !entry.plainText && !entry.failed) {
+      if (entry.id && !entry.request && !entry.original && !entry.plainText &&
+          (!entry.failed || entry.manualState === "queued")) {
         analyzeOriginal(body, entry);
       }
     }
