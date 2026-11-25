@@ -16,11 +16,11 @@ El escudo muestra tres posiciones, igual que en Thunderbird. La primera suma los
 
 El escudo y la barra toman el color del indicio de mayor prioridad. Un posible píxel o una imagen sospechosa tiene prioridad roja. Le siguen los enlaces con indicios de seguimiento en naranja y las imágenes externas en turquesa. Puedes desplegar el panel y filtrar por tipo. Cada fila lleva su propia etiqueta y color.
 
-Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el análisis completo. Usa la cuenta y el identificador del mensaje para pedir el original a Gmail. Mientras llega, muestra los primeros resultados de la vista del correo. El análisis también funciona con la barra oculta.
+Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el análisis completo. Usa la cuenta y el identificador del mensaje para pedir el original a Gmail. Durante la lectura, la barra muestra **Analizando el mensaje** y el escudo muestra **…**. Una línea recorre la barra mientras dura el análisis. Si has activado la preferencia de movimiento reducido, la línea permanece quieta. El análisis también funciona con la barra oculta.
 
 PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
 
-Al terminar, el detalle indica **Análisis completo**. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo. Con **Filtrar por tipo** puedes revisar las imágenes pendientes y los demás hallazgos.
+Al desplegar la barra, **Filtrar por tipo** aparece a la izquierda, encima de los hallazgos. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo.
 
 El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
@@ -28,7 +28,9 @@ El detector se activa en `https://mail.google.com/mail/*`. El análisis del mens
 
 ## Ajustes y VirusTotal
 
-Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel en los correos. La preferencia se guarda en el navegador. En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
+Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y elegir el **Tema** de PixelGuard. **Claro** es el predeterminado y **Oscuro** cambia tanto los ajustes como el panel de los correos abiertos. La elección se guarda en el navegador.
+
+En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
 
 PixelGuard cifra la clave de API localmente con AES-GCM. La clave de cifrado de Web Crypto es no exportable y se conserva en IndexedDB, en el origen privado de la extensión. El navegador no sincroniza estas claves. Alguien que controle tu sesión de Windows o el perfil del navegador aún podría usar la integración. En **Gestionar clave**, **Eliminar clave y desactivar** borra la clave de API guardada y desactiva las consultas.
 
@@ -45,6 +47,8 @@ python chrome/build.py
 node --test chrome/tests/scanner.test.cjs chrome/tests/worker.test.cjs
 node chrome/tests/smoke.cjs
 node chrome/tests/original-smoke.cjs
+node chrome/tests/context-reload-smoke.cjs
+node chrome/tests/popup-smoke.cjs
 ```
 
 Puedes indicar el ejecutable de Chrome for Testing mediante `CHROME_FOR_TESTING`. Para contrastar el resultado con Gmail real, abre los mensajes elegidos en el buzón de prueba con la extensión cargada. Anota por separado el resumen y los indicios que aparecen al desplegarlo.

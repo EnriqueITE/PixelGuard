@@ -178,14 +178,34 @@ async function main() {
     assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'false');
     assert.equal(new URL(page.url()).search, '');
 
-    // Gmail can reuse the same DOM for a different message during a request.
+    // Hold the original so the visible message contains genuine preliminary
+    // findings while we inspect the collapsed and expanded scanning states.
     const delayedRequest = nextRoute(delayedId);
-    await page.locator('.adn').evaluate((el, id) => {
+    await page.locator('.adn').evaluate((el, {id, html}) => {
       el.setAttribute('data-legacy-message-id', id);
       el.setAttribute('data-message-id', '#msg-f:' + BigInt('0x' + id));
-      el.querySelector('.a3s').textContent = 'No visible images or links';
-    }, delayedId);
+      el.querySelector('.a3s').innerHTML = html;
+    }, {id: delayedId, html: visibleHtml});
     const delayedRoute = await delayedRequest;
+    const running = summary.getByText('Analyzing the message', {exact: true});
+    const results = panel.locator('.pg-results');
+    const sweep = () => summary.evaluate(el => getComputedStyle(el, '::after').animationName);
+    await running.waitFor();
+    assert.equal(await panel.getAttribute('open'), null);
+    assert.notEqual(await panel.getAttribute('data-scanning'), null);
+    assert.equal(await results.getAttribute('aria-busy'), 'true');
+    assert.doesNotMatch(await summary.innerText(), /tracking indicators|partial scan|no tracking/i);
+    assert.notEqual(await sweep(), 'none');
+    await waitForBadge(worker, tabId, '…', [73, 97, 106, 255]);
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    assert.equal(await sweep(), 'none');
+    assert.equal(await running.isVisible(), true);
+    await summary.click();
+    assert.equal(await panel.locator('.pg-list li:visible, .pg-filter:visible, .pg-pager:visible').count(), 0,
+      'Opening the panel during scanning must not reveal provisional results');
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+
+    // Gmail can reuse the same DOM for a different message during a request.
     const pageCount = ctx.pages().length;
     await page.locator('.adn').evaluate((el, id) => {
       el.setAttribute('data-legacy-message-id', id);
@@ -200,6 +220,9 @@ async function main() {
     const retry = panel.getByRole('button', {name: 'Retry scan', exact: true});
     assert.equal(await panel.getAttribute('open'), null, 'The panel starts collapsed for a new message');
     await retry.waitFor();
+    assert.equal(await panel.getAttribute('data-scanning'), null);
+    assert.notEqual(await results.getAttribute('aria-busy'), 'true');
+    assert.equal(await sweep(), 'none');
     await delayedRoute.fulfill({contentType: 'message/rfc822', body: raw});
     await page.waitForLoadState('networkidle');
     assert.equal(ctx.pages().length, pageCount, 'An automatic failure must not open another tab');
@@ -214,10 +237,16 @@ async function main() {
     const messageKey = 'msg-f:' + BigInt('0x' + secondId);
     const secondRequestsBeforeRetry = requestsFor(secondId).length;
     const [manualRoute] = await Promise.all([nextRoute(secondId), retry.click()]);
-    await panel.getByText('Running full scan…', {exact: true}).waitFor();
+    await running.waitFor();
     assert.equal(await retry.isDisabled(), true);
+    assert.doesNotMatch(await summary.innerText(), /tracking indicators|partial scan/i);
+    assert.equal(await panel.locator('.pg-list li:visible, .pg-filter:visible').count(), 0);
     await manualRoute.fulfill({contentType: 'message/rfc822', body: raw});
-    await panel.getByText('Full scan complete', {exact: true}).waitFor();
+    await pixelRow.waitFor();
+    assert.doesNotMatch(await panel.innerText(), /full scan complete/i);
+    assert.equal(await panel.getAttribute('data-scanning'), null);
+    assert.notEqual(await results.getAttribute('aria-busy'), 'true');
+    assert.equal(await sweep(), 'none');
     assert.notEqual(await panel.getAttribute('open'), null, 'The single click reveals the results');
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
     assert.doesNotMatch(await summary.innerText(), /partial scan/i);
@@ -275,7 +304,8 @@ async function main() {
     assert.equal(wanted.searchParams.get('permmsgid'), hintedKey);
     assert.equal(wanted.searchParams.get('ik'), syntheticHint);
     await summary.click();
-    await panel.getByText('Full scan complete', {exact: true}).waitFor();
+    await pixelRow.waitFor();
+    assert.doesNotMatch(await panel.innerText(), /full scan complete/i);
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
     assert.doesNotMatch(await panel.innerText(), new RegExp(syntheticHint));
     assert.equal(unexpectedPages.length, 0);

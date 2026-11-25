@@ -6,12 +6,17 @@
   const bodySelector = ".a3s";
   const messages = new Map();
   const dirty = new Set();
+  const lifetime = new AbortController();
+  const extensionId = chrome.runtime.id;
+  const iconUrl = chrome.runtime.getURL("assets/icon-48.png");
+  let refreshTimer, preferenceTimer;
   const originalPage = new URL(location.href).searchParams.get("view") === "om";
   let originalPageRecord;
   const maxOriginalReads = 2;
   let activeOriginalReads = 0;
   const pageSize = 3;
   let showPanel = false;
+  let theme = "light";
   const t = (key, ...values) => chrome.i18n.getMessage(key, values);
   // Show the highest-priority group first, also used for the summary's accent.
   const categories = {
@@ -63,11 +68,13 @@
 
   function createPanel(onFullScan) {
     const panel = element("details", "pixelguard-gmail");
+    panel.dataset.theme = theme;
     const summary = element("summary");
     const logo = element("img");
     logo.alt = "";
-    logo.src = chrome.runtime.getURL("assets/icon-48.png");
+    logo.src = iconUrl;
     const status = element("span", "pg-status");
+    status.setAttribute("role", "status");
     const chevron = element("i", "pg-chevron");
     chevron.setAttribute("aria-hidden", "true");
     const originalButton = button(t("gmailRetryScan"));
@@ -102,9 +109,11 @@
     const range = element("span", "pg-range");
     range.setAttribute("aria-live", "polite");
     footer.append(range, prev, next);
-    tools.append(originalBar, filterBar);
-    panel.append(summary, tools, list, empty, footer);
-    const state = {panel, summary, status, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    tools.append(filterBar, originalBar);
+    const results = element("div", "pg-results");
+    results.append(tools, list, empty, footer);
+    panel.append(summary, results);
+    const state = {panel, summary, status, results, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
@@ -125,6 +134,7 @@
   }
 
   function drawPage(state) {
+    if (!contextActive()) return;
     const {filter, list, footer, prev, next, range} = state;
     const entries = filter.value === "all" ? state.entries :
       state.entries.filter(({item}) => item.classification === filter.value);
@@ -149,14 +159,17 @@
       url.dir = "ltr";
       const copy = button(t("gmailCopy"));
       copy.addEventListener("click", async () => {
+        if (!contextActive() || !copy.isConnected) return;
         try {
           await navigator.clipboard.writeText(item.url);
-          copy.textContent = t("gmailCopied");
         } catch {
+          if (!contextActive() || !copy.isConnected) return;
           const selection = window.getSelection();
           selection.selectAllChildren(url);
           copy.textContent = t("gmailSelected");
+          return;
         }
+        if (contextActive() && copy.isConnected) copy.textContent = t("gmailCopied");
       });
       const detail = element("div", "pg-row-foot");
       detail.append(element("span", "", reason), copy);
@@ -258,13 +271,16 @@
   }
 
   let lastCounts = "";
-  function updateBadge(suspicious, externals, links) {
-    const counts = [suspicious, externals, links].join(",");
+  async function updateBadge(suspicious, externals, links, scanning = false) {
+    const counts = scanning ? "scanning" : [suspicious, externals, links].join(",");
     if (counts === lastCounts) return;
     lastCounts = counts;
-    chrome.runtime.sendMessage({type: "pg:badge", suspicious, externals, links}).catch(() => {
+    try {
+      await chrome.runtime.sendMessage({type: "pg:badge", suspicious, externals, links, scanning});
+    } catch {
       if (lastCounts === counts) lastCounts = "";
-    });
+      contextActive();
+    }
   }
 
   function originalControls(entry) {
@@ -273,10 +289,8 @@
     originalButton.hidden = !entry.failed;
     originalButton.disabled = entry.retryState === "pending";
     let text = "";
-    if (entry.original) text = t("gmailFullScanComplete");
-    else if (entry.plainText) text = t("gmailPlainSource");
+    if (entry.plainText) text = t("gmailPlainSource");
     else if (entry.retryState === "failed") text = t("gmailFullScanFailed");
-    else if (entry.id && (!entry.failed || entry.retryState === "pending")) text = t("gmailFullScanRunning");
     else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") : t("gmailUnavailableImages", String(missing));
     else if (entry.failed) text = t("gmailOriginalFailed");
     originalBar.hidden = !text;
@@ -284,12 +298,11 @@
   }
 
   function requestFullScan(body, entry) {
-    if (!entry.failed || entry.request || entry.retryState === "pending" || messages.get(body) !== entry ||
+    if (!contextActive() || !entry.failed || entry.request || entry.retryState === "pending" || messages.get(body) !== entry ||
         !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
     entry.retryState = "pending";
     entry.view.panel.open = true;
-    originalControls(entry);
-    scheduleRefresh();
+    refresh();
   }
 
   async function analyzeOriginal(body, entry) {
@@ -299,9 +312,9 @@
     entry.request = request;
     const timeout = setTimeout(() => request.abort(), 20000);
     try {
-      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, body);
+      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, body, contextActive);
       request.signal.throwIfAborted();
-      if (!body.isConnected || messages.get(body) !== entry ||
+      if (!contextActive() || !body.isConnected || messages.get(body) !== entry ||
           PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
       entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
       entry.failed = false;
@@ -311,15 +324,15 @@
       }
       dirty.add(body);
     } catch (error) {
+      if (!contextActive() || messages.get(body) !== entry) return;
       entry.plainText = error?.name === "PlainTextOriginal";
       entry.failed = !entry.plainText;
-      if (messages.get(body) === entry) dirty.add(body);
+      dirty.add(body);
     } finally {
       clearTimeout(timeout);
       entry.request = null;
       entry.retryState = retry && entry.failed ? "failed" : null;
       activeOriginalReads--;
-      if (messages.get(body) === entry) originalControls(entry);
       scheduleRefresh();
     }
   }
@@ -363,17 +376,16 @@
   }
 
   function refresh() {
-    scheduled = false;
-    if (!chrome.runtime.id) {
-      observer.disconnect();
-      return;
-    }
+    clearTimeout(refreshTimer);
+    refreshTimer = undefined;
+    if (!contextActive()) return;
     if (originalPage) {
       refreshOriginalPage();
       return;
     }
     const visible = new Set(visibleBodies());
     let suspicious = 0, externals = 0, links = 0;
+    let tabScanning = false;
     for (const body of visible) {
       const message = body.closest(messageSelector);
       const sender = message.querySelector(".gD[email]");
@@ -392,6 +404,8 @@
         entry.senderDomain = senderDomain;
       }
       const result = entry.original?.result || entry.result;
+      const scanning = !!id && !entry.original && !entry.plainText && (!entry.failed || entry.retryState === "pending");
+      if (scanning) tabScanning = true;
       suspicious += result.suspicious.length;
       externals += result.externals.length;
       links += result.links.length;
@@ -399,8 +413,18 @@
         const mount = !entry.view;
         if (mount) entry.view = createPanel(() => requestFullScan(body, entry));
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
-        if (updated || mount) {
-          render(entry.view, body, result, entry.original?.labels, entry.failed);
+        const view = entry.view;
+        if (updated || mount || scanning !== view.panel.hasAttribute("data-scanning")) {
+          view.panel.toggleAttribute("data-scanning", scanning);
+          view.results.hidden = scanning;
+          view.results.setAttribute("aria-busy", String(scanning));
+          if (scanning) {
+            view.summary.removeAttribute("data-category");
+            const label = t("gmailFullScanRunning");
+            if (view.status.textContent !== label) view.status.textContent = label;
+          } else {
+            render(view, body, result, entry.original?.labels, entry.failed);
+          }
           originalControls(entry);
         }
       } else if (entry.view) {
@@ -415,7 +439,7 @@
       messages.delete(body);
     }
     dirty.clear();
-    updateBadge(suspicious, externals, links);
+    updateBadge(suspicious, externals, links, tabScanning);
 
     if (document.hidden) return;
     for (const [body, entry] of messages) {
@@ -427,13 +451,32 @@
     }
   }
 
-  let scheduled = false;
+  // Chromium can leave this world and its DOM handlers alive after an extension reload.
+  function contextActive() {
+    if (lifetime.signal.aborted) return false;
+    try {
+      if (chrome.runtime?.id === extensionId) return true;
+    } catch { /* An invalidated context can also throw when accessing the API. */ }
+    lifetime.abort();
+    observer.disconnect();
+    clearTimeout(refreshTimer);
+    clearTimeout(preferenceTimer);
+    for (const entry of messages.values()) {
+      entry.request?.abort();
+      entry.view?.panel.remove();
+    }
+    originalPageRecord?.view?.panel.remove();
+    originalPageRecord = null;
+    messages.clear();
+    dirty.clear();
+    return false;
+  }
+
   function scheduleRefresh() {
-    if (scheduled) return;
-    scheduled = true;
-    setTimeout(refresh, 25);
+    if (contextActive() && refreshTimer === undefined) refreshTimer = setTimeout(refresh, 25);
   }
   const observer = new MutationObserver(records => {
+    if (!contextActive()) return;
     let changed = false;
     for (const record of records) {
       const el = record.target.nodeType === 1 ? record.target : record.target.parentElement;
@@ -453,43 +496,48 @@
       "data-original", "data-lazy", "data-lazy-src", "data-url", "data-srcset", "href",
       "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
   });
-  window.addEventListener("hashchange", scheduleRefresh);
+  const listenerOptions = {signal: lifetime.signal};
+  window.addEventListener("hashchange", scheduleRefresh, listenerOptions);
   window.addEventListener("pageshow", event => {
     if (event.persisted) { lastCounts = ""; scheduleRefresh(); }
-  });
+  }, listenerOptions);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) scheduleRefresh();
-  });
+  }, listenerOptions);
   // An extension reload invalidates the old script, but the page keeps its DOM.
   for (const panel of document.querySelectorAll("details.pixelguard-gmail")) {
-    if (panel.querySelector("summary > img")?.getAttribute("src") === chrome.runtime.getURL("assets/icon-48.png")) panel.remove();
+    if (panel.querySelector("summary > img")?.getAttribute("src") === iconUrl) panel.remove();
   }
   let receivedPreference = false;
+  function applyPreferences(preferences) {
+    receivedPreference = true;
+    showPanel = preferences.showPanel === true;
+    theme = preferences.theme === "dark" ? "dark" : "light";
+    for (const entry of messages.values()) {
+      if (entry.view) entry.view.panel.dataset.theme = theme;
+    }
+    if (originalPageRecord?.view) originalPageRecord.view.panel.dataset.theme = theme;
+    refresh();
+  }
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (sender.id !== chrome.runtime.id) return;
+    if (!contextActive() || sender.id !== extensionId) return;
     if (message.type === "pg:gmail:ping") {
       reply({ready: true});
     } else if (message.type === "pg:gmail:links") {
       reply(linkInventory());
     } else if (message.type === "pg:panelChanged") {
-      receivedPreference = true;
-      showPanel = message.showPanel === true;
-      refresh();
+      applyPreferences(message);
     }
   });
-  async function loadPreference() {
-    for (const wait of [0, 250, 1000, 4000]) {
-      if (wait) await new Promise(resolve => setTimeout(resolve, wait));
-      if (receivedPreference || !chrome.runtime.id) return;
-      try {
-        const result = await chrome.runtime.sendMessage({type: "pg:panel"});
-        if (result?.ok && !receivedPreference) {
-          receivedPreference = true;
-          showPanel = result.showPanel === true;
-          refresh();
-          return;
-        }
-      } catch { /* A worker that is reloading may temporarily have no receiver. */ }
+  const preferenceRetries = [250, 1000, 4000];
+  async function loadPreference(attempt = 0) {
+    if (receivedPreference || !contextActive()) return;
+    try {
+      const result = await chrome.runtime.sendMessage({type: "pg:panel"});
+      if (result?.ok && !receivedPreference && contextActive()) applyPreferences(result);
+    } catch { /* A worker that is reloading may temporarily have no receiver. */ }
+    if (!receivedPreference && contextActive() && attempt < preferenceRetries.length) {
+      preferenceTimer = setTimeout(loadPreference, preferenceRetries[attempt], attempt + 1);
     }
   }
   loadPreference();

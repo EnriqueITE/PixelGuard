@@ -88,7 +88,7 @@
     return source;
   }
 
-  async function read(id, signal, body) {
+  async function read(id, signal, body, contextActive) {
     const account = accountPath(location);
     if (!account || typeof id !== 'string' || !(HEX_ID.test(id) || PERM_ID.test(id))) throw Error('Invalid Gmail message');
     const wrapper = body?.parentElement?.closest(MESSAGE_WRAPPER);
@@ -96,7 +96,7 @@
     const permId = nativeId || (HEX_ID.test(id) ? 'msg-f:' + BigInt('0x' + id).toString() : id);
     const hasLegacy = HEX_ID.test(wrapper ? wrapper.getAttribute('data-legacy-message-id') || '' : id);
     function checkCurrent() {
-      if (signal?.aborted) throw Error('Gmail read cancelled');
+      if (signal?.aborted || contextActive?.() === false) throw Error('Gmail read cancelled');
       if (accountPath(location) !== account || (body && (!body.isConnected || messageId(body) !== id ||
           permanentId(body.parentElement?.closest(MESSAGE_WRAPPER)) !== nativeId))) throw Error('Gmail message changed');
     }

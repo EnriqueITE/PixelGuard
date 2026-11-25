@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --surface: #fff;
   --text: #19313a;
   --muted: #51676e;
@@ -11,8 +11,9 @@
   --danger: #a23128;
   font: 14px/1.45 system-ui, sans-serif;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --surface: #172328; --text: #edf4f3; --muted: #b0c2c3; --line: #3e5256; --soft: #213236; --accent: #76ddbb; --on-accent: #0e3026; --track: #708489; --danger: #ffaea9; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #172328; --text: #edf4f3; --muted: #b0c2c3; --line: #3e5256; --soft: #213236; --accent: #76ddbb; --on-accent: #0e3026; --track: #708489; --danger: #ffaea9;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -24,6 +25,8 @@ header span { color: var(--muted); margin-left: auto; font-size: 13px; }
 main { padding: 0 18px 15px; }
 h2, .setting > label { font-size: 14px; font-weight: 650; }
 .setting { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 14px 0; }
+.setting.appearance { padding-top: 0; }
+.appearance select { width: auto; min-width: 90px; }
 section { border-top: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 12px; }
 button, input, select, textarea { font: inherit; }

@@ -5,7 +5,7 @@ const VT_PERMISSION = { origins: ['https://www.virustotal.com/*'] };
 const storage = chrome.storage.local;
 const vault = PixelGuardVault.create();
 // Only the popup and service worker need storage access. Gmail receives the
-// visibility preference over messaging, never storage events or the VT key.
+// panel preferences over messaging, never storage events or the VT key.
 const ready = storage.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 // Migrate on worker startup, even if the user never opens the popup again.
 // A transient storage failure is retried on the next config operation.
@@ -35,20 +35,25 @@ function withConfig(operation) {
   });
 }
 
+async function panelPreferences() {
+  const { showPanel, theme } = await storage.get(['showPanel', 'theme']);
+  return {showPanel: showPanel !== false, theme: theme === 'dark' ? 'dark' : 'light'};
+}
+
 async function state() {
   return withConfig(async config => {
-    const { showPanel } = await storage.get('showPanel');
+    const panel = await panelPreferences();
     const hasKey = !!config.sealedKey;
     const vtEnabled = hasKey && config.enabled === true && await chrome.permissions.contains(VT_PERMISSION);
-    return { ok: true, showPanel: showPanel !== false, hasKey, vtEnabled };
+    return { ok: true, ...panel, hasKey, vtEnabled };
   });
 }
 
-async function notifyPanels(showPanel) {
+async function notifyPanels({showPanel, theme}) {
   // Tab IDs are available without the broad tabs permission. Only our Gmail
   // content scripts receive this message; other tabs have no listener.
   const tabs = await chrome.tabs.query({});
-  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel })));
+  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel, theme })));
 }
 
 async function settings(msg) {
@@ -58,6 +63,11 @@ async function settings(msg) {
       if (typeof msg.showPanel !== 'boolean') return fail('unavailable');
       update.showPanel = msg.showPanel;
     }
+    if ('theme' in msg) {
+      if (msg.theme !== 'light' && msg.theme !== 'dark') return fail('unavailable');
+      update.theme = msg.theme;
+    }
+    const panelChanged = 'showPanel' in update || 'theme' in update;
     if ('vtEnabled' in msg || 'apiKey' in msg) {
       if (('apiKey' in msg && typeof msg.apiKey !== 'string') ||
           ('vtEnabled' in msg && typeof msg.vtEnabled !== 'boolean')) return fail('unavailable');
@@ -76,15 +86,16 @@ async function settings(msg) {
         } else {
           await storage.remove('vtConfig');
           await vault.remove();
-          if ('showPanel' in update) await storage.set(update);
+          if (panelChanged) await storage.set(update);
         }
       });
       if (error) return error;
-    } else if ('showPanel' in update) {
+    } else if (panelChanged) {
       await storage.set(update);
     }
-    if ('showPanel' in update) await notifyPanels(update.showPanel);
-    return state();
+    const updated = await state();
+    if (panelChanged) await notifyPanels(updated);
+    return updated;
   });
 }
 
@@ -143,19 +154,25 @@ async function lookup(msg) {
   }
 }
 
-async function updateBadge(tabId, { suspicious, externals, links }) {
+async function updateBadge(tabId, { suspicious, externals, links, scanning = false }) {
   const counts = [suspicious, externals, links];
-  if (!counts.every(count => Number.isSafeInteger(count) && count >= 0)) return fail('unavailable');
-  const hasFindings = counts.some(count => count > 0);
-  const text = hasFindings ? counts.map(count => count > 9 ? '+' : String(count)).join('') : '';
-  const title = hasFindings ? chrome.i18n.getMessage('badgeFindingsTitle', counts.map(String)) : chrome.runtime.getManifest().name;
+  if (typeof scanning !== 'boolean' || !counts.every(count => Number.isSafeInteger(count) && count >= 0)) return fail('unavailable');
+  let text = '';
+  let title = chrome.runtime.getManifest().name;
+  let color;
+  if (scanning) {
+    text = '…';
+    title = chrome.i18n.getMessage('gmailFullScanRunning');
+    color = '#49616a';
+  } else if (counts.some(count => count > 0)) {
+    text = counts.map(count => count > 9 ? '+' : String(count)).join('');
+    title = chrome.i18n.getMessage('badgeFindingsTitle', counts.map(String));
+    color = suspicious > 0 ? '#e53935' : links > 0 ? '#ff9800' : '#00bfa5';
+  }
   // Issue the tab-scoped updates together, in delivery order, even when the
   // service worker is waking up or an earlier request is still resolving.
   const updates = [chrome.action.setBadgeText({ tabId, text }), chrome.action.setTitle({ tabId, title })];
-  if (hasFindings) {
-    const color = suspicious > 0 ? '#e53935' : links > 0 ? '#ff9800' : '#00bfa5';
-    updates.push(chrome.action.setBadgeBackgroundColor({ tabId, color }));
-  }
+  if (color) updates.push(chrome.action.setBadgeBackgroundColor({ tabId, color }));
   await Promise.all(updates);
   return { ok: true };
 }
@@ -205,7 +222,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg.type === 'pg:settings') return settings(msg);
     if (msg.type === 'pg:lookup') return lookup(msg);
     await writes;
-    if (msg.type === 'pg:panel') return { ok: true, showPanel: (await storage.get('showPanel')).showPanel !== false };
+    if (msg.type === 'pg:panel') return { ok: true, ...await panelPreferences() };
     return state();
   }).then(reply, () => reply(fail('storage')));
   return true;

@@ -35,7 +35,7 @@ async function checkBadge(worker, tabId, text, color) {
 async function main() {
   const ctx = await chromium.launchPersistentContext("", {
     channel: "chromium", executablePath: process.env.CHROME_FOR_TESTING || undefined,
-    headless: true, locale: "en-US",
+    headless: true, locale: "en-US", colorScheme: "dark",
     ignoreDefaultArgs: ["--disable-extensions"],
     args: ["--lang=en-US", "--enable-unsafe-extension-debugging", "--host-resolver-rules=MAP * ~NOTFOUND"]
   });
@@ -82,6 +82,9 @@ async function main() {
     await check("link", "1 link with tracking indicators", /click\.example\.test.*redirect/i, "tracking-link");
     await check("logo", logoSummary, /external image/i, "external-image");
     assert.equal(await page.locator(".pixelguard-gmail").count(), 3);
+    assert.equal(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches), true);
+    const panelBackground = item => item.evaluate(node => getComputedStyle(node).backgroundColor);
+    assert.equal(await panelBackground(panel("logo")), "rgb(255, 255, 255)", "White is the default even on a dark OS");
     assert.equal(await page.evaluate(() => window.beforeInstall), true);
     await checkBadge(worker, tabId, "111", badgeColors.red);
     for (const name of names) {
@@ -199,6 +202,15 @@ async function main() {
     await page.bringToFront();
     const popup = await ctx.newPage();
     await popup.goto(new URL("popup.html", worker.url()).href);
+    const theme = popup.locator("#theme");
+    assert.equal(await theme.inputValue(), "light");
+    await theme.selectOption("dark");
+    await page.waitForFunction(() => [...document.querySelectorAll(".pixelguard-gmail")].every(node =>
+      getComputedStyle(node).colorScheme === "dark"));
+    const darkBackground = await panelBackground(panel("link"));
+    assert.notEqual(darkBackground, "rgb(255, 255, 255)");
+    assert.notEqual(await mixed.getAttribute("open"), null, "Changing theme preserves the expanded results");
+    assert.match(await mixed.locator("summary").innerText(), /tracking pixel/);
     const toggle = popup.getByRole("switch", {name: "Show", exact: false}).first();
     await toggle.uncheck();
     await panel("link").waitFor({state:"detached"});
@@ -230,6 +242,11 @@ async function main() {
     await probe.goto(new URL("popup.html", worker.url()).href);
     await checkBadge(probe, tabId, "111", badgeColors.red);
     assert.equal(await page.locator(".pixelguard-gmail").count(), 3, "exactly one panel per message after extension reload");
+    await probe.waitForFunction(() => document.querySelector("#theme")?.value === "dark");
+    assert.equal(await panelBackground(panel("logo")), darkBackground, "Panel theme survives an extension reload");
+    await probe.locator("#theme").selectOption("light");
+    await page.waitForFunction(() => [...document.querySelectorAll(".pixelguard-gmail")].every(node =>
+      getComputedStyle(node).backgroundColor === "rgb(255, 255, 255)"));
     const reloadedToggle = probe.locator("#panel-toggle");
     await reloadedToggle.uncheck();
     await page.waitForFunction(() => !document.querySelector(".pixelguard-gmail"));
@@ -292,6 +309,9 @@ async function main() {
     const shop = panel("link");
     await shop.locator("summary").click();
     await shop.locator(".pg-original").getByText("Gmail hides the addresses of 23 images.", {exact: true}).waitFor();
+    const filterBox = await shop.locator(".pg-filter").boundingBox();
+    const noticeBox = await shop.locator(".pg-original").boundingBox();
+    assert.ok(filterBox.x + filterBox.width <= noticeBox.x + 1, "The filter appears to the left of the partial-scan notice");
     await shop.getByRole("combobox").selectOption("unavailable-image");
     const hidden = shop.locator('li[data-category="unavailable-image"]').filter({hasText: /display:\s*none/i});
     assert.equal(await hidden.count(), 1);

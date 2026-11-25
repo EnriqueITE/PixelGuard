@@ -32,7 +32,11 @@ function harness(shared = { data: {} }) {
       async setBadgeBackgroundColor({ tabId, color }) { setBadge(tabId, { color }); },
       async setTitle({ tabId, title }) { setBadge(tabId, { title }); }
     },
-    i18n: { getMessage(key, values) { assert.equal(key, 'badgeFindingsTitle'); return values.join(', '); } },
+    i18n: { getMessage(key, values) {
+      if (key === 'gmailFullScanRunning') return 'Analyzing the message';
+      assert.equal(key, 'badgeFindingsTitle');
+      return values.join(', ');
+    } },
     storage: { local: {
       async setAccessLevel({ accessLevel }) { access = accessLevel; },
       async get(keys) {
@@ -88,17 +92,33 @@ function harness(shared = { data: {} }) {
   };
 }
 
-test('the Gmail page only receives visibility, including when settings change', async () => {
+test('the Gmail page only receives panel visibility and theme, including when settings change', async () => {
   const h = harness();
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true });
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true, theme: 'light' });
   for (const type of ['pg:settings', 'pg:lookup', 'pg:state']) {
     assert.equal((await h.send(type, { apiKey: sample }, h.gmail)).error, 'unauthorized');
   }
   await h.send('pg:settings', { showPanel: false, apiKey: sample });
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false });
-  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false })));
-  assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false });
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false, theme: 'light' });
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light' })));
+  assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false, theme: 'light' });
   assert.equal(h.requests.length, 0);
+});
+
+test('changing theme preserves other preferences and remains local across worker restarts', async () => {
+  const shared = { data: { showPanel: false, theme: 'unknown' } };
+  const h = harness(shared);
+  assert.equal((await h.send('pg:state')).theme, 'light');
+  assert.equal((await h.send('pg:settings', { theme: 'dark' }, h.gmail)).error, 'unauthorized');
+  assert.equal((await h.send('pg:settings', { theme: 'system', showPanel: true })).ok, false);
+  assert.deepEqual(h.broadcasts, []);
+  assert.equal((await h.send('pg:settings', { theme: 'dark' })).theme, 'dark');
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'dark' })));
+  const reopened = harness(shared);
+  assert.deepEqual(await reopened.send('pg:panel', {}, reopened.gmail), {ok: true, showPanel: false, theme: 'dark'});
+  assert.equal((await reopened.send('pg:settings', {showPanel: true})).theme, 'dark');
+  assert.equal((await reopened.send('pg:settings', {theme: 'light'})).showPanel, true);
+  assert.deepEqual(reopened.requests, []);
 });
 
 test('the Gmail toolbar badge shows counts and the highest-priority color for each tab', async () => {
@@ -136,7 +156,27 @@ test('only an active top-level Gmail document can publish valid badge counts', a
   for (const bad of [-1, 0.5, '1', Infinity]) {
     assert.equal((await h.send('pg:badge', { ...counts, links: bad }, h.gmail)).error, 'unavailable');
   }
+  for (const scanning of [null, 0, 'true']) {
+    assert.equal((await h.send('pg:badge', { ...counts, scanning }, h.gmail)).error, 'unavailable');
+  }
   assert.equal(h.badges.size, 0);
+});
+
+test('a scanning tab shows a neutral badge until its findings are ready', async () => {
+  const h = harness();
+  const counts = { suspicious: 2, externals: 1, links: 0 };
+  const scan = { text: '…', title: 'Analyzing the message', color: '#49616a' };
+  const otherTab = { ...h.gmail, tab: { id: 2 } };
+  await h.send('pg:badge', { ...counts, scanning: true }, h.gmail);
+  await h.send('pg:badge', { suspicious: 0, externals: 0, links: 0, scanning: true }, otherTab);
+  assert.deepEqual(h.badges.get(1), scan);
+  assert.deepEqual(h.badges.get(2), scan);
+  await h.send('pg:badge', { ...counts, scanning: false }, h.gmail);
+  assert.deepEqual(h.badges.get(1), { text: '210', title: '2, 1, 0', color: '#e53935' });
+  assert.deepEqual(h.badges.get(2), scan);
+  await h.send('pg:badge', { suspicious: 0, externals: 0, links: 0 }, otherTab);
+  assert.equal(h.badges.get(2).text, '');
+  assert.equal(h.badges.get(2).title, 'PixelGuard for Gmail');
 });
 
 test('ignores requests from older content scripts to open the original in another tab', async () => {

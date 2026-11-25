@@ -205,6 +205,18 @@ test('does not request the message after it closes or the request aborts during 
   }
 });
 
+test('an extension reload during a download prevents another request from the old script', async () => {
+  let active = true;
+  const views = [];
+  const api = harness(account, async url => {
+    views.push(new URL(url).searchParams.get('view'));
+    active = false;
+    return new Response('Unavailable', {status: 404});
+  });
+  await assert.rejects(api.read(id, undefined, undefined, () => active), /cancelled/);
+  assert.deepEqual(views, ['att']);
+});
+
 test('does not request the original again after a size limit, cancellation, or unsupported MIME', async () => {
   const ctrl = new AbortController();
   for (const [download, expected] of [

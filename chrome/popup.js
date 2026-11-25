@@ -45,11 +45,14 @@
     el("query-hash").disabled = !active || !el("file").files.length;
   }
   function paint() {
-    // The native switch already shows the user's choice until the save settles.
+    // Native controls show the user's selection until the save settles.
     if (!saving) {
       el("panel-toggle").checked = state.showPanel;
+      el("theme").value = state.theme === "dark" ? "dark" : "light";
       el("vt-toggle").checked = state.vtEnabled;
     }
+    document.documentElement.dataset.theme = el("theme").value;
+    el("theme").disabled = saving;
     el("panel-toggle").disabled = saving;
     el("vt-toggle").hidden = !state.hasKey;
     el("vt-toggle").disabled = saving;
@@ -102,6 +105,7 @@
     finally { saving = false; paint(); }
   }
   el("panel-toggle").onchange = event => save({ showPanel: event.target.checked });
+  el("theme").onchange = event => save({ theme: event.target.value });
   el("vt-toggle").onchange = event => {
     const enabled = event.target.checked;
     return save({ vtEnabled: enabled }, { permission: enabled });
