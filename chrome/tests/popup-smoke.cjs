@@ -65,13 +65,16 @@ async function run() {
     await page.goto("https://popup.example.test/popup.html");
     const q = id => page.locator("#" + id);
     await q("setup").waitFor();
-    await page.waitForSelector("#theme:enabled");
-    assert.equal(await q("theme").inputValue(), "light");
+    const darkMode = page.getByRole("switch", { name: "Modo oscuro", exact: true });
+    await page.getByRole("switch", { name: "Modo oscuro", checked: false, disabled: false }).waitFor();
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(255, 255, 255)");
-    await page.getByLabel("Tema", {exact: true}).selectOption("dark");
-    await page.waitForSelector('html[data-theme="dark"] #theme:enabled');
+    await darkMode.click();
+    await page.getByRole("switch", { name: "Modo oscuro", checked: true, disabled: false }).waitFor();
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(23, 35, 40)");
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "theme"]);
+    await darkMode.press("Space");
+    await page.getByRole("switch", { name: "Modo oscuro", checked: false, disabled: false }).waitFor();
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(255, 255, 255)");
     await page.evaluate(() => { testState.holdPanelSave = true; });
     await q("panel-toggle").uncheck();
     assert.equal(await q("panel-toggle").isChecked(), false);
@@ -125,7 +128,7 @@ async function run() {
     await q("manage").waitFor();
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "apiKey"]);
     assert.deepEqual(errors, []);
-    console.log("PASS light default and dark theme, manual key entry, separate activation, permission denial, hidden-bar inventory, URL cancellation and key deletion");
+    console.log("PASS light default and dark mode switch with mouse and keyboard, manual key entry, separate activation, permission denial, hidden-bar inventory, URL cancellation and key deletion");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });

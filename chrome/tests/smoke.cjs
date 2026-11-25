@@ -157,8 +157,9 @@ async function main() {
       addImage("https://cdn.example.test/logo", 180, 48);
     });
     const mixed = panel("link");
-    const select = mixed.getByRole("combobox");
+    const select = mixed.getByRole("combobox", {name: "Filter by type", exact: true});
     await mixed.getByText("1–3 of 8").waitFor();
+    assert.doesNotMatch(await mixed.innerText(), /Filter by type/i, "The filter label is only announced to assistive technology");
     await mixed.getByRole("button", {name:"Next"}).click();
     await checkSummary("link", "1 possible tracking pixel · 1 suspicious image · 5 links with tracking indicators · 1 external image", colorFor["tracking-pixel"]);
     for (const category of ["tracking-pixel", "suspicious-image", "tracking-link", "external-image"]) {
@@ -202,9 +203,9 @@ async function main() {
     await page.bringToFront();
     const popup = await ctx.newPage();
     await popup.goto(new URL("popup.html", worker.url()).href);
-    const theme = popup.locator("#theme");
-    assert.equal(await theme.inputValue(), "light");
-    await theme.selectOption("dark");
+    const darkMode = popup.getByRole("switch", {name: "Dark mode", exact: true});
+    assert.equal(await darkMode.isChecked(), false);
+    await darkMode.click();
     await page.waitForFunction(() => [...document.querySelectorAll(".pixelguard-gmail")].every(node =>
       getComputedStyle(node).colorScheme === "dark"));
     const darkBackground = await panelBackground(panel("link"));
@@ -242,9 +243,10 @@ async function main() {
     await probe.goto(new URL("popup.html", worker.url()).href);
     await checkBadge(probe, tabId, "111", badgeColors.red);
     assert.equal(await page.locator(".pixelguard-gmail").count(), 3, "exactly one panel per message after extension reload");
-    await probe.waitForFunction(() => document.querySelector("#theme")?.value === "dark");
+    const restoredDarkMode = probe.getByRole("switch", {name: "Dark mode", exact: true, checked: true});
+    await restoredDarkMode.waitFor();
     assert.equal(await panelBackground(panel("logo")), darkBackground, "Panel theme survives an extension reload");
-    await probe.locator("#theme").selectOption("light");
+    await restoredDarkMode.click();
     await page.waitForFunction(() => [...document.querySelectorAll(".pixelguard-gmail")].every(node =>
       getComputedStyle(node).backgroundColor === "rgb(255, 255, 255)"));
     const reloadedToggle = probe.locator("#panel-toggle");

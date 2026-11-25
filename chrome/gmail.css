@@ -105,9 +105,8 @@
 .pixelguard-gmail[open] .pg-chevron { transform: translateY(2px) rotate(225deg); }
 .pixelguard-gmail .pg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; padding-inline: 14px; color: var(--pg-muted); font-size: 12px; }
 .pixelguard-gmail .pg-original { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding-block: 7px; }
-.pixelguard-gmail .pg-filter { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding-block: 7px; }
+.pixelguard-gmail .pg-filter { max-width: 100%; min-width: 0; margin-block: 7px; padding: 4px 7px; border: 1px solid var(--pg-line); background: var(--pg-surface); color: var(--pg-ink); border-radius: 5px; font: inherit; cursor: pointer; }
 .pixelguard-gmail .pg-filter:not([hidden]) + .pg-original { margin-inline-start: auto; }
-.pixelguard-gmail .pg-filter select { max-width: 100%; min-width: 0; padding: 4px 7px; border: 1px solid var(--pg-line); background: var(--pg-surface); color: var(--pg-ink); border-radius: 5px; font: inherit; cursor: pointer; }
 .pixelguard-gmail .pg-empty { padding: 10px 14px; color: var(--pg-muted); }
 .pixelguard-gmail .pg-list { margin: 0; padding: 0 14px; list-style: none; }
 .pixelguard-gmail .pg-list:not(:empty) { border-top: 1px solid var(--pg-line); }

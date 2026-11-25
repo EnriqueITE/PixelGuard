@@ -92,14 +92,13 @@
     originalStatus.setAttribute("role", "status");
     originalBar.append(originalStatus);
     originalBar.hidden = true;
-    const filterBar = element("label", "pg-filter");
-    const filter = element("select");
+    const filter = element("select", "pg-filter");
+    filter.setAttribute("aria-label", t("gmailFilterLabel"));
     for (const value of Object.keys(filterLabels)) {
       const option = element("option");
       option.value = value;
       filter.append(option);
     }
-    filterBar.append(element("span", "", t("gmailFilterLabel")), filter);
     const list = element("ul", "pg-list");
     const empty = element("div", "pg-empty", t("gmailNoMatches"));
     empty.setAttribute("role", "status");
@@ -109,11 +108,11 @@
     const range = element("span", "pg-range");
     range.setAttribute("aria-live", "polite");
     footer.append(range, prev, next);
-    tools.append(filterBar, originalBar);
+    tools.append(filter, originalBar);
     const results = element("div", "pg-results");
     results.append(tools, list, empty, footer);
     panel.append(summary, results);
-    const state = {panel, summary, status, results, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    const state = {panel, summary, status, results, originalBar, originalButton, originalStatus, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
@@ -213,7 +212,7 @@
       option.disabled = count === 0 && option.value !== "all" && !option.selected;
       option.hidden = option.value === "unavailable-image" && !missing && !option.selected;
     }
-    state.filterBar.hidden = !items.length && !missing && state.filter.value === "all";
+    state.filter.hidden = !items.length && !missing && state.filter.value === "all";
     const labels = originalLabels || new Map();
     if (!originalLabels) {
       for (const a of body.querySelectorAll("a[href]")) {
@@ -365,7 +364,7 @@
         render(view, null, result, record.scan.labels);
       } else {
         view.status.textContent = t(record.plainText ? "gmailPlainSource" : "gmailOriginalUnsupported");
-        view.filterBar.hidden = view.footer.hidden = view.empty.hidden = true;
+        view.filter.hidden = view.footer.hidden = view.empty.hidden = true;
       }
       raw.before(view.panel);
       record.view = view;

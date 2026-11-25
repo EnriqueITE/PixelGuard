@@ -26,7 +26,6 @@ main { padding: 0 18px 15px; }
 h2, .setting > label { font-size: 14px; font-weight: 650; }
 .setting { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 14px 0; }
 .setting.appearance { padding-top: 0; }
-.appearance select { width: auto; min-width: 90px; }
 section { border-top: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 12px; }
 button, input, select, textarea { font: inherit; }

@@ -20,7 +20,7 @@ Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el aná
 
 PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
 
-Al desplegar la barra, **Filtrar por tipo** aparece a la izquierda, encima de los hallazgos. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo.
+Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo.
 
 El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
@@ -28,7 +28,7 @@ El detector se activa en `https://mail.google.com/mail/*`. El análisis del mens
 
 ## Ajustes y VirusTotal
 
-Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y elegir el **Tema** de PixelGuard. **Claro** es el predeterminado y **Oscuro** cambia tanto los ajustes como el panel de los correos abiertos. La elección se guarda en el navegador.
+Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y activar **Modo oscuro**. El tema claro es el predeterminado. El interruptor cambia al instante el aspecto de los ajustes y del panel de los correos abiertos. La elección se guarda en el navegador.
 
 En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
 
