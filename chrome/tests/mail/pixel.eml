@@ -1,0 +1,9 @@
+From: PixelGuard Lab <lab@example.test>
+To: Test inbox <inbox@example.test>
+Subject: PixelGuard A - Opening pixel
+Message-ID: <pixelguard-gmail-a@example.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=UTF-8
+
+<p>Your test receipt is ready.</p>
+<img src="https://events.vendor.test/open.gif?uid=test-only" width="1" height="1" alt="">

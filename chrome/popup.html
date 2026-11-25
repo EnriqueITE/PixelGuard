@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PixelGuard</title>
+  <link rel="stylesheet" href="popup.css">
+  <script defer src="virustotal/inventory.js"></script>
+  <script defer src="popup.js"></script>
+</head>
+<body>
+  <header><img src="assets/toolbar-32.png" width="32" height="32" alt=""><h1>PixelGuard</h1><span>Gmail</span></header>
+  <main>
+    <div class="setting">
+      <label for="panel-toggle" data-msg="pgShowBar"></label>
+      <input id="panel-toggle" class="switch" type="checkbox" role="switch" disabled>
+    </div>
+    <section aria-labelledby="vt-title">
+      <div class="setting">
+        <div><h2 id="vt-title">VirusTotal</h2><div class="muted" data-msg="pgVtHint"></div></div>
+        <button id="setup" type="button" data-msg="pgConfigure" hidden></button>
+        <input id="vt-toggle" class="switch" type="checkbox" role="switch" aria-labelledby="vt-title" hidden disabled>
+      </div>
+      <div id="key-bar" hidden><span class="muted" data-msg="vt_keySaved"></span><button id="manage" class="text-btn" data-msg="pgManage"></button></div>
+      <form id="key-form" hidden>
+        <label for="key" data-msg="vt_keyLabel"></label>
+        <input id="key" type="password" autocomplete="off" spellcheck="false" minlength="16" maxlength="256" required>
+        <p class="muted" data-msg="pgKeyPrivacy"></p>
+        <div class="links"><a href="https://www.virustotal.com/gui/join-us" target="_blank" rel="noopener noreferrer" data-msg="vt_getKey"></a>
+          <a href="https://docs.virustotal.com/reference/public-vs-premium-api" target="_blank" rel="noopener noreferrer" data-msg="vt_apiTerms"></a></div>
+        <div class="buttons"><button class="primary" id="save-key" type="submit" data-msg="pgSaveKey"></button>
+          <button id="cancel-key" type="button" data-msg="vt_cancel"></button></div>
+        <button id="delete-key" type="button" class="text-btn danger" data-msg="vt_delete" hidden></button>
+      </form>
+      <details id="lookup" hidden>
+        <summary data-msg="vt_title"></summary>
+        <div class="work">
+          <div class="mode" role="group" aria-label="VirusTotal">
+            <button type="button" id="link-mode" aria-pressed="true" data-msg="pgLink"></button>
+            <button type="button" id="file-mode" aria-pressed="false" data-msg="pgFile"></button>
+          </div>
+          <div id="link-fields">
+            <div id="inventory-field" hidden><label for="links" data-msg="pgThreadLinks"></label><select id="links"></select></div>
+            <p class="muted" id="truncated" data-msg="vt_truncated" hidden></p>
+            <label for="url" data-msg="pgLinkAddress"></label>
+            <textarea id="url" rows="2" dir="ltr" placeholder="https://…" spellcheck="false" maxlength="16384"></textarea>
+            <div class="buttons">
+              <button id="query-domain" class="primary" disabled data-msg="vt_queryDomain"></button>
+              <button id="preview-url" disabled data-msg="pgReviewUrl"></button>
+            </div>
+          </div>
+          <div id="confirmation" hidden>
+            <strong data-msg="pgShareTitle"></strong>
+            <pre id="exact-url" dir="ltr" tabindex="0"></pre>
+            <p class="muted" data-msg="pgUrlNotice"></p>
+            <div class="buttons"><button id="confirm-url" class="primary" data-msg="vt_confirmUrl"></button>
+              <button id="cancel-url" data-msg="vt_cancel"></button></div>
+          </div>
+          <div id="file-fields" hidden>
+            <label for="file" data-msg="pgLocalFile"></label>
+            <input type="file" id="file" aria-describedby="file-hint">
+            <p class="muted" id="file-hint" data-msg="pgFileHint"></p>
+            <button id="query-hash" class="primary" data-msg="vt_queryHash" disabled></button>
+          </div>
+          <div id="result" role="status" hidden>
+            <strong id="result-title"></strong>
+            <p id="zero-note" class="muted" data-msg="vt_notSafe" hidden></p>
+            <p id="result-time" class="muted"></p>
+            <a id="report" target="_blank" rel="noopener noreferrer" data-msg="vt_openReport" hidden></a>
+          </div>
+        </div>
+      </details>
+    </section>
+    <p id="status" role="status" hidden></p>
+  </main>
+</body>
+</html>
