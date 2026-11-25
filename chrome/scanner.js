@@ -69,8 +69,11 @@
 
   function getComputedStyleSafe(el) {
     try {
-      const view = el?.ownerDocument?.defaultView || root;
+      const view = el?.ownerDocument?.defaultView;
       if (view?.getComputedStyle) return view.getComputedStyle(el);
+      // Template contents have no window or computed layout. Their inline
+      // declarations still record an explicit display:none or opacity:0.
+      if (el?.style) return el.style;
     } catch (_) {}
     return parseStyle(el?.getAttribute?.("style") || "");
   }
@@ -103,7 +106,7 @@
     const style = getComputedStyleSafe(el);
     const displayNone = style.display === "none";
     const visibilityHidden = style.visibility === "hidden";
-    const opacityZero = Number(style.opacity ?? 1) === 0;
+    const opacityZero = style.opacity !== "" && Number(style.opacity ?? 1) === 0;
     const tiny = hasTinyPair(attrs) || hasTinyPair(styled);
     const zero = hasZeroDimension(attrs) || hasZeroDimension(styled);
     const tinySize = hasTinyPair(attrs) ? attrs : styled;

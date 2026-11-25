@@ -16,7 +16,11 @@ El escudo muestra tres posiciones, igual que en Thunderbird. La primera suma los
 
 El escudo y la barra toman el color del indicio de mayor prioridad. Un posible píxel o una imagen sospechosa tiene prioridad roja. Le siguen los enlaces con indicios de seguimiento en naranja y las imágenes externas en turquesa. Puedes desplegar el panel y filtrar por tipo. Cada fila lleva su propia etiqueta y color.
 
-El detector analiza localmente los elementos que Gmail muestra en cada mensaje. Usa las dimensiones explícitas, la visibilidad y los indicios de la URL. Si una URL del proxy de imágenes incluye la dirección original en el fragmento, el adaptador puede recuperar ese dominio. Si Gmail bloquea las imágenes y quita su dirección, el panel señala las que están ocultas en el HTML visible y conserva la indicación de análisis parcial. Puedes contrastarlo en el menú del mensaje con **Mostrar original**, incluso con las imágenes bloqueadas. Una alerta describe indicios de seguimiento. Determinar si el remitente registró la apertura queda fuera del alcance del análisis.
+Al abrir un correo, PixelGuard analiza los elementos que muestra Gmail. Usa las dimensiones explícitas, la visibilidad y los indicios de la URL. Si Gmail bloquea las imágenes y quita su dirección, el panel indica que el análisis es parcial.
+
+**Analizar original**, dentro del panel desplegado, pide a Gmail el original de ese mensaje usando la sesión abierta. PixelGuard decodifica el cuerpo HTML en memoria. Busca las direcciones y los indicios de seguimiento sin ejecutar el HTML ni solicitar imágenes al remitente. El panel y el escudo pasan a mostrar el resultado del original. Si la lectura falla, el panel conserva los hallazgos de la vista normal. También puedes abrir **Mostrar original** en el menú del mensaje. PixelGuard analiza el texto que Gmail presenta en esa pestaña.
+
+El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
 El detector se activa en `https://mail.google.com/mail/*`. El análisis del mensaje es local y respeta la elección de imágenes de Gmail. El [detector de Gmail](scanner.js) parte del de Thunderbird y reconoce las direcciones del proxy de imágenes de Gmail. La compilación reutiliza los iconos de PixelGuard, las traducciones de los indicios y las funciones de inventario de enlaces que ya están en la raíz.
 
@@ -38,6 +42,7 @@ Con Node, `playwright-core` y su navegador Chromium instalados, ejecuta desde la
 python chrome/build.py
 node --test chrome/tests/scanner.test.cjs chrome/tests/worker.test.cjs
 node chrome/tests/smoke.cjs
+node chrome/tests/original-smoke.cjs
 ```
 
 Puedes indicar el ejecutable de Chrome for Testing mediante `CHROME_FOR_TESTING`. Para contrastar el resultado con Gmail real, abre los mensajes elegidos en el buzón de prueba con la extensión cargada. Anota por separado el resumen y los indicios que aparecen al desplegarlo.

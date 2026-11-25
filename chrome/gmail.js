@@ -1,4 +1,4 @@
-/* global chrome, PixelGuardScanner, PixelGuardVTInventory */
+/* global chrome, PixelGuardScanner, PixelGuardVTInventory, PixelGuardGmailOriginal, PixelGuardOriginalScan, PixelGuardOriginalMime */
 (() => {
   if (globalThis.pixelGuardGmailAttached || !location.pathname.startsWith("/mail/")) return;
   globalThis.pixelGuardGmailAttached = true;
@@ -6,6 +6,8 @@
   const bodySelector = ".a3s";
   const messages = new Map();
   const dirty = new Set();
+  const originalPage = new URL(location.href).searchParams.get("view") === "om";
+  let originalPageRecord;
   const pageSize = 3;
   let showPanel = false;
   const t = (key, ...values) => chrome.i18n.getMessage(key, values);
@@ -58,7 +60,7 @@
     return control;
   }
 
-  function createPanel() {
+  function createPanel(onOriginal) {
     const panel = element("details", "pixelguard-gmail");
     const summary = element("summary");
     const logo = element("img");
@@ -69,6 +71,16 @@
     chevron.setAttribute("aria-hidden", "true");
     summary.append(logo, element("strong", "", "PixelGuard"), status, chevron);
     const note = element("p", "pg-note");
+    const originalBar = element("div", "pg-original");
+    const originalButton = button(t("gmailAnalyzeOriginal"));
+    const originalStatus = element("span");
+    originalStatus.setAttribute("role", "status");
+    originalBar.append(originalButton, originalStatus);
+    originalBar.hidden = true;
+    originalButton.hidden = !onOriginal;
+    if (onOriginal) originalButton.addEventListener("click", event => {
+      if (event.isTrusted) onOriginal();
+    });
     const filterBar = element("label", "pg-filter");
     const filter = element("select");
     for (const value of Object.keys(filterLabels)) {
@@ -86,8 +98,8 @@
     const range = element("span", "pg-range");
     range.setAttribute("aria-live", "polite");
     footer.append(range, prev, next);
-    panel.append(summary, note, filterBar, list, empty, footer);
-    const state = {panel, summary, status, note, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    panel.append(summary, note, originalBar, filterBar, list, empty, footer);
+    const state = {panel, summary, status, note, originalBar, originalButton, originalStatus, filterBar, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
@@ -154,13 +166,13 @@
     if (pages > 1) range.textContent = t("gmailRange", String(start + 1), String(Math.min(start + pageSize, entries.length)), String(entries.length));
   }
 
-  function render(state, body, result) {
+  function render(state, body, result, originalLabels) {
     const items = [...result.suspicious, ...result.links, ...result.externals];
     const counts = new Map();
     for (const item of items) counts.set(item.classification, (counts.get(item.classification) || 0) + 1);
     // With images disabled Gmail may preserve the img and strip its source.
     const sources = ["src", "srcset", "data-src", "data-srcset", "data-original", "data-lazy", "data-lazy-src", "data-url"];
-    const unavailable = [...body.querySelectorAll("img")].filter(img =>
+    const unavailable = originalLabels ? [] : [...body.querySelectorAll("img")].filter(img =>
       !sources.some(attr => img.getAttribute(attr)?.trim()));
     const missing = unavailable.length;
     counts.set("unavailable-image", missing);
@@ -183,13 +195,15 @@
       option.hidden = option.value === "unavailable-image" && !missing && !option.selected;
     }
     state.filterBar.hidden = !items.length && !missing && state.filter.value === "all";
-    const labels = new Map();
-    for (const a of body.querySelectorAll("a[href]")) {
-      const label = anchorLabel(a);
-      if (label) labels.set(a.getAttribute("href"), label);
-    }
-    for (const img of body.querySelectorAll("img[src][alt]")) {
-      if (img.alt.trim()) labels.set(originalImage(img.getAttribute("src")), img.alt.trim().slice(0, 180));
+    const labels = originalLabels || new Map();
+    if (!originalLabels) {
+      for (const a of body.querySelectorAll("a[href]")) {
+        const label = anchorLabel(a);
+        if (label) labels.set(a.getAttribute("href"), label);
+      }
+      for (const img of body.querySelectorAll("img[src][alt]")) {
+        if (img.alt.trim()) labels.set(originalImage(img.getAttribute("src")), img.alt.trim().slice(0, 180));
+      }
     }
     state.entries = items.map(item => {
       const reasons = item.signals.filter(signal => signalKeys[signal]).map(signal => t(signalKeys[signal]));
@@ -254,10 +268,93 @@
     });
   }
 
+  function originalControls(entry) {
+    if (!entry.view) return;
+    const {originalBar, originalButton, originalStatus} = entry.view;
+    originalBar.hidden = !entry.id;
+    originalButton.hidden = !!entry.original;
+    originalButton.disabled = !!entry.request;
+    const key = entry.request ? "gmailReadingOriginal" : entry.original ? "gmailOriginalDone" :
+      entry.failed ? "gmailOriginalFailed" : "";
+    const text = key ? t(key) : "";
+    if (originalStatus.textContent !== text) originalStatus.textContent = text;
+  }
+
+  async function analyzeOriginal(body, entry) {
+    if (!entry.id || entry.request || entry.original || messages.get(body) !== entry) return;
+    const request = new AbortController();
+    entry.request = request;
+    entry.failed = false;
+    originalControls(entry);
+    const timeout = setTimeout(() => request.abort(), 20000);
+    try {
+      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal);
+      if (request.signal.aborted || !body.isConnected || messages.get(body) !== entry ||
+          PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
+      entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
+      if (entry.view) {
+        entry.view.filter.value = "all";
+        entry.view.page = 0;
+      }
+      dirty.add(body);
+    } catch {
+      entry.failed = true;
+    } finally {
+      clearTimeout(timeout);
+      entry.request = null;
+      if (messages.get(body) === entry) {
+        originalControls(entry);
+        scheduleRefresh();
+      }
+    }
+  }
+
+  // Gmail also exposes the full MIME as text on its own “Show original” page.
+  function refreshOriginalPage() {
+    const raw = document.querySelector("pre.raw_message_text");
+    if (!raw) {
+      originalPageRecord?.view?.panel.remove();
+      originalPageRecord = null;
+      updateBadge(0, 0, 0);
+      return;
+    }
+    if (originalPageRecord?.node !== raw || originalPageRecord.needsScan) {
+      originalPageRecord?.view?.panel.remove();
+      originalPageRecord = {node: raw};
+      try {
+        const html = PixelGuardOriginalMime.html(raw.textContent);
+        originalPageRecord.scan = PixelGuardOriginalScan.scan(html);
+      } catch { /* Gmail may show a source with no readable HTML body. */ }
+    }
+    const record = originalPageRecord;
+    const result = record.scan?.result;
+    updateBadge(result?.suspicious.length || 0, result?.externals.length || 0, result?.links.length || 0);
+    if (showPanel && !record.view) {
+      const view = createPanel();
+      if (result) {
+        render(view, null, result, record.scan.labels);
+        view.originalBar.hidden = false;
+        view.originalStatus.textContent = t("gmailOriginalDone");
+      } else {
+        view.status.textContent = t("gmailOriginalUnsupported");
+        view.filterBar.hidden = view.footer.hidden = view.empty.hidden = true;
+      }
+      raw.before(view.panel);
+      record.view = view;
+    } else if (!showPanel && record.view) {
+      record.view.panel.remove();
+      record.view = null;
+    }
+  }
+
   function refresh() {
     scheduled = false;
     if (!chrome.runtime.id) {
       observer.disconnect();
+      return;
+    }
+    if (originalPage) {
+      refreshOriginalPage();
       return;
     }
     const visible = new Set(visibleBodies());
@@ -266,24 +363,31 @@
       const message = body.closest(messageSelector);
       const sender = message.querySelector(".gD[email]");
       const senderDomain = sender && !body.contains(sender) ? sender.getAttribute("email").split("@").pop() : "";
+      const id = PixelGuardGmailOriginal.messageId(body);
       let entry = messages.get(body);
-      if (!entry) {
-        entry = {};
+      if (!entry || entry.id !== id) {
+        entry?.request?.abort();
+        entry?.view?.panel.remove();
+        entry = {id};
         messages.set(body, entry);
       }
       const updated = !entry.result || dirty.has(body) || entry.senderDomain !== senderDomain;
-      if (updated) {
+      if (updated && !entry.original) {
         entry.result = PixelGuardScanner.scanDocument(body, {senderDomain, resolveImageUrl: originalImage});
         entry.senderDomain = senderDomain;
       }
-      suspicious += entry.result.suspicious.length;
-      externals += entry.result.externals.length;
-      links += entry.result.links.length;
+      const result = entry.original?.result || entry.result;
+      suspicious += result.suspicious.length;
+      externals += result.externals.length;
+      links += result.links.length;
       if (showPanel) {
         const mount = !entry.view;
-        if (mount) entry.view = createPanel();
+        if (mount) entry.view = createPanel(() => analyzeOriginal(body, entry));
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
-        if (updated || mount) render(entry.view, body, entry.result);
+        if (updated || mount) {
+          render(entry.view, body, result, entry.original?.labels);
+          originalControls(entry);
+        }
       } else if (entry.view) {
         entry.view.panel.remove();
         entry.view = null;
@@ -291,6 +395,7 @@
     }
     for (const [body, entry] of messages) {
       if (visible.has(body)) continue;
+      entry.request?.abort();
       entry.view?.panel.remove();
       messages.delete(body);
     }
@@ -309,6 +414,9 @@
     for (const record of records) {
       const el = record.target.nodeType === 1 ? record.target : record.target.parentElement;
       if (!el || el.closest(".pixelguard-gmail")) continue;
+      if (originalPageRecord?.node.contains(el) && record.type !== "attributes") {
+        originalPageRecord.needsScan = true;
+      }
       const body = el.closest(bodySelector);
       if (body) dirty.add(body);
       changed = true;

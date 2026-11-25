@@ -54,6 +54,8 @@
 .pixelguard-gmail .pg-chevron { margin-inline-start: auto; width: 8px; height: 8px; flex: none; border: solid var(--pg-accent); border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); }
 .pixelguard-gmail[open] .pg-chevron { transform: translateY(2px) rotate(225deg); }
 .pixelguard-gmail > .pg-note { margin: 0; padding: 9px 14px; color: var(--pg-muted); background: #f8faf9; font-size: 12px; }
+.pixelguard-gmail > .pg-original { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 5px 12px; color: var(--pg-muted); font-size: 12px; }
+.pixelguard-gmail .pg-original > [hidden] { display: none; }
 .pixelguard-gmail > .pg-filter { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--pg-line); color: var(--pg-muted); font-size: 12px; }
 .pixelguard-gmail .pg-filter select { max-width: 100%; min-width: 0; padding: 4px 7px; border: 1px solid var(--pg-line); background: #fff; color: var(--pg-ink); border-radius: 5px; font: inherit; cursor: pointer; }
 .pixelguard-gmail > .pg-empty { padding: 10px 14px; color: var(--pg-muted); }

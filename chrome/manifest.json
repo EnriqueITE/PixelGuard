@@ -22,7 +22,7 @@
   },
   "content_scripts": [{
     "matches": ["https://mail.google.com/mail/*"],
-    "js": ["scanner.js", "virustotal/inventory.js", "gmail.js"],
+    "js": ["scanner.js", "virustotal/inventory.js", "original-mime.js", "original-scan.js", "gmail-original.js", "gmail.js"],
     "css": ["gmail.css"]
   }],
   "web_accessible_resources": [{
