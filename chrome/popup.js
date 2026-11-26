@@ -170,7 +170,8 @@
       const items = attachments.some(item => item.id === rowAttachment.id) ? attachments : [rowAttachment, ...attachments];
       showAttachments(items, rowAttachment.id);
       rowAttachment = null;
-      queryAttachment();
+      forgetLookup();
+      el("attachments").focus();
       return;
     }
     showLinks();

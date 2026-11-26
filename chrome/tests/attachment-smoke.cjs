@@ -112,21 +112,24 @@ async function main() {
     await buttons.nth(1).waitFor();
     assert.equal(await buttons.count(), 2);
     assert.equal(await mail.locator('#sender-content button').count(), 0);
-    // Open the actual toolbar popup with Gmail active, without selecting a result or attachment.
-    await worker.evaluate(() => chrome.action.openPopup());
-    await config.waitForFunction(label => chrome.extension.getViews({type: 'popup'}).some(view => {
-      const doc = view.document;
-      const picker = doc.getElementById('attachments');
-      return doc.getElementById('url')?.getClientRects().length && picker?.getClientRects().length &&
-        !picker.disabled && picker.value === '' &&
-        Array.from(picker.options).filter(option => option.textContent.startsWith(label)).length === 2;
-    }), filename);
+    const [knownId, unknownId] = await config.evaluate(async () => {
+      const [source] = await chrome.tabs.query({url: 'https://mail.google.com/*'});
+      const inventory = await chrome.tabs.sendMessage(source.id, {type: 'pg:gmail:attachments'}, {frameId: 0});
+      return inventory.attachments.map(item => item.id);
+    });
+    assert.notEqual(knownId, unknownId, 'The two cards have distinct IDs despite sharing a filename');
     assert.deepEqual(downloads, []);
     assert.deepEqual(await requests(), []);
-    await config.evaluate(() => chrome.extension.getViews({type: 'popup'})[0].close());
-    await mail.bringToFront();
     await buttons.first().click();
     // Chrome's toolbar widget may not be enumerated as a normal browser tab.
+    await config.waitForFunction(id => chrome.extension.getViews({type: 'popup'}).some(view => {
+      const doc = view.document;
+      return doc.getElementById('attachments')?.value === id && !doc.getElementById('query-hash').disabled &&
+        doc.getElementById('attachment-digest').hidden && doc.getElementById('result').hidden;
+    }), knownId);
+    assert.deepEqual(downloads, [], 'Clicking the Gmail card only selects its attachment');
+    assert.deepEqual(await requests(), [], 'The native popup waits for the hash lookup button');
+    await config.evaluate(() => chrome.extension.getViews({type: 'popup'})[0].document.getElementById('query-hash').click());
     await config.waitForFunction(expected => chrome.extension.getViews().some(view => {
       const result = view.document.getElementById('result');
       if (view === window || !result || result.hidden || view.document.getElementById('attachment-sha')?.textContent !== expected) return false;
@@ -136,14 +139,33 @@ async function main() {
     assert.deepEqual(await requests(), [{method: 'GET', path: '/api/v3/files/' + hash(known)}]);
     assert.ok(!downloads.includes('0.2'), 'Reading the first card must not download the second attachment');
     await config.evaluate(() => chrome.extension.getViews().find(view => view !== window && view.document.getElementById('result')).close());
+    await config.waitForFunction(() => !chrome.extension.getViews({type: 'popup'}).length);
+    await mail.bringToFront();
+    // Opening the toolbar normally shows both selectors without retaining the last card.
+    await worker.evaluate(() => chrome.action.openPopup());
+    await config.waitForFunction(label => chrome.extension.getViews({type: 'popup'}).some(view => {
+      const doc = view.document;
+      const picker = doc.getElementById('attachments');
+      return doc.getElementById('url')?.getClientRects().length && picker?.getClientRects().length &&
+        !picker.disabled && picker.value === '' &&
+        Array.from(picker.options).filter(option => option.textContent.startsWith(label)).length === 2;
+    }), filename);
+    assert.deepEqual(downloads, ['0.1']);
+    assert.equal((await requests()).length, 1);
+    await config.evaluate(() => chrome.extension.getViews({type: 'popup'})[0].close());
     await worker.evaluate(() => { chrome.action.openPopup = async () => { throw Error('Use the compatibility window in this test'); }; });
     await mail.bringToFront();
     const beforeFallback = sourceReads;
     const [popup] = await Promise.all([ctx.waitForEvent('page'), buttons.nth(1).click()]);
     const select = popup.locator('#attachments');
-    await popup.waitForFunction(() => document.querySelectorAll('#attachments option').length === 3);
+    await popup.waitForFunction(id => document.querySelectorAll('#attachments option').length === 3 &&
+      document.getElementById('attachments').value === id && !document.getElementById('query-hash').disabled, unknownId);
     const ids = await select.locator('option').evaluateAll(opts => opts.map(o => o.value).filter(Boolean));
-    assert.equal(new Set(ids).size, 2, 'Duplicate filenames must remain individually selectable');
+    assert.deepEqual(ids, [knownId, unknownId]);
+    assert.deepEqual(downloads, ['0.1'], 'Opening the second card does not download its attachment');
+    assert.deepEqual(await requests(), [{method: 'GET', path: '/api/v3/files/' + hash(known)}]);
+    assert.equal(await popup.locator('#upload-confirmation').isVisible(), false);
+    await popup.locator('#query-hash').click();
     await popup.locator('#confirm-upload').waitFor();
     assert.ok(sourceReads > beforeFallback, 'The selected attachment is recovered from the original when its download redirects');
     assert.equal(await popup.locator('#attachment-sha').textContent(), hash(unknown));

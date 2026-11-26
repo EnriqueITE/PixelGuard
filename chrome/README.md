@@ -40,7 +40,7 @@ Con VirusTotal activado, elige un enlace del hilo abierto o pega una URL en el m
 
 ### Adjuntos de Gmail
 
-Con VirusTotal activado, abre el escudo de PixelGuard. Debajo del campo de enlaces aparece el desplegable **Adjuntos del correo abierto**. Elige el archivo por su nombre y pulsa **Consultar huella**. Si abres otro correo sin adjuntos, el desplegable lo indica. También puedes iniciar la consulta desde el botón **VirusTotal** junto al adjunto en Gmail.
+Con VirusTotal activado, abre el escudo de PixelGuard y elige el archivo en **Adjuntos del correo abierto**, debajo del campo de enlaces. También puedes pulsar **VirusTotal** junto al adjunto en Gmail para abrir el widget con ese archivo seleccionado. En ambos casos, pulsa **Consultar huella** para iniciar la consulta. Si abres otro correo sin adjuntos, el desplegable lo indica.
 
 Al consultar, PixelGuard obtiene el archivo de Gmail, calcula su SHA-256 en tu equipo y envía esa huella a VirusTotal. El widget muestra la huella y el informe disponible. El límite por adjunto es de 50 MiB.
 

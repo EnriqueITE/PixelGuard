@@ -274,6 +274,15 @@ async function run() {
       await page.evaluate(fixture => sessionStorage.setItem("rowFixture", JSON.stringify(fixture)), fixture);
       await page.goto("https://popup.example.test/popup.html?visit=" + ++visit + hash);
     }
+    async function querySelectedAttachment(id) {
+      await page.waitForFunction(id => document.getElementById("attachments").value === id, id);
+      assert.deepEqual(await page.evaluate(() => [testState.reads, testState.lookups, testState.reports, testState.uploads]),
+        [[], [], [], []], "A Gmail attachment handoff only selects a file, including after enabling VirusTotal");
+      assert.equal(await q("attachment-digest").isVisible(), false);
+      assert.equal(await q("result").isVisible(), false);
+      assert.equal(await q("upload-confirmation").isVisible(), false);
+      await q("query-hash").click();
+    }
     await openWidget({url: rowImage, state: {hasKey: true, vtEnabled: true}}, "#tab=42");
     await page.waitForFunction(url => document.querySelector("#url").value === url, rowImage);
     assert.equal(await address.inputValue(), rowImage);
@@ -349,6 +358,7 @@ async function run() {
     const unusual = {id: "odd", name: "A/B\\C\u0003" + "x".repeat(501) + "📧".repeat(12) + ".pdf", body: "abc"};
     const uploadName = "A_B_C_" + "x".repeat(501) + ".pdf";
     await openWidget({state: enabled, attachment: unusual, attachments: [unusual]});
+    await querySelectedAttachment(unusual.id);
     await q("upload-confirmation").waitFor();
     assert.equal(await q("attachments").locator("option:checked").textContent(), unusual.name);
     assert.equal(await q("upload-file-name").innerText(), uploadName + " · 3 B");
@@ -362,15 +372,18 @@ async function run() {
     assert.deepEqual(await page.evaluate(() => testState.reads), []);
     await page.evaluate(() => { testState.granted = true; });
     await q("vt-toggle").click();
+    await querySelectedAttachment(handoff.id);
     await q("report").waitFor();
     assert.equal(await q("attachments").inputValue(), "a1");
     assert.equal(await q("attachment-sha").innerText(), hash(attachments[0]));
     assert.equal(await q("upload-confirmation").isVisible(), false);
 
     await openWidget({state: enabled, attachments, attachment: handoff, report: "error"});
+    await querySelectedAttachment(handoff.id);
     await q("status").filter({hasText: catalog.vt_error_network.message}).waitFor();
     assert.equal(await q("upload-confirmation").isVisible(), false, "A failed lookup cannot offer upload");
     await openWidget({state: enabled, attachments: [{...attachments[0], hold: true}, attachments[1]], attachment: handoff});
+    await querySelectedAttachment(handoff.id);
     await page.waitForFunction(() => typeof window.deliverFile === "function");
     await attachmentSelect.selectOption("a2");
     await page.evaluate(() => window.deliverFile());
@@ -423,9 +436,11 @@ async function run() {
     await page.setViewportSize({width: 366, height: 340});
     for (const report of ["reported", "no_report"]) {
       await openWidget({state: enabled, attachments: [{...attachments[0], hold: true}], attachment: handoff, report});
+      await querySelectedAttachment(handoff.id);
       await page.waitForFunction(() => typeof window.deliverFile === "function");
       // The user can keep navigating controls while Gmail is reading the file.
       await q("panel-toggle").focus();
+      await page.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await page.evaluate(() => scrollY), 0);
       await page.evaluate(() => window.deliverFile());
       await q("result-title").waitFor();
