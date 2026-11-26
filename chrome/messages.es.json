@@ -2,6 +2,8 @@
   "gmailDescription": { "message": "Muestra indicios de seguimiento en los mensajes abiertos en Gmail con el detector local de PixelGuard." },
   "gmailNoSignals": { "message": "Sin indicios de seguimiento" },
   "gmailPartial": { "message": "Análisis parcial" },
+  "gmailPartialInfo": { "message": "Acerca de este análisis parcial" },
+  "gmailPartialExplanation": { "message": "PixelGuard solo pudo revisar lo que Gmail muestra en pantalla. El original puede contener píxeles o enlaces de seguimiento que aquí no se ven." },
   "gmailPlainSource": { "message": "Original en texto plano" },
   "gmailOriginalFailed": { "message": "Solo se pudo analizar la vista del mensaje." },
   "gmailRetryScan": { "message": "Reintentar análisis" },

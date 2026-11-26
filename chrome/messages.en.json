@@ -2,6 +2,8 @@
   "gmailDescription": { "message": "See tracking indicators in open Gmail messages, with evidence from PixelGuard's local scanner." },
   "gmailNoSignals": { "message": "No tracking indicators found" },
   "gmailPartial": { "message": "Partial scan" },
+  "gmailPartialInfo": { "message": "About this partial scan" },
+  "gmailPartialExplanation": { "message": "PixelGuard could only check what Gmail displays. The original message may contain tracking pixels or links that are hidden in this view." },
   "gmailPlainSource": { "message": "Plain-text original" },
   "gmailOriginalFailed": { "message": "Only the message view could be analyzed." },
   "gmailRetryScan": { "message": "Retry scan" },

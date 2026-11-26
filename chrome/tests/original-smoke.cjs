@@ -134,6 +134,7 @@ async function main() {
     const tabId = await worker.evaluate(async () => (await chrome.tabs.query({active: true, lastFocusedWindow: true}))[0].id);
     const panel = page.locator('.pixelguard-gmail');
     const summary = panel.locator('.pg-summary');
+    const partialInfo = panel.getByRole('button', {name: 'About this partial scan', exact: true});
     const popup = await ctx.newPage();
     await popup.goto(new URL('popup.html', worker.url()).href);
     const toggle = popup.locator('#panel-toggle');
@@ -153,6 +154,7 @@ async function main() {
     assert.match(await summary.innerText(), /1 possible tracking pixel/);
     assert.match(await summary.innerText(), /1 link with tracking indicators/);
     assert.doesNotMatch(await summary.innerText(), /images without a URL|partial scan/i);
+    assert.equal(await partialInfo.count(), 0, 'A complete original has no partial-scan help');
     await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
     assert.equal(requestsFor(firstId).length, 1, 'A successful download needs no additional source request');
     assert.deepEqual(await page.locator('.a3s img').evaluateAll(imgs => imgs.map(i => i.getAttribute('src'))), [null, null]);
@@ -194,6 +196,7 @@ async function main() {
     assert.equal(await panel.getAttribute('open'), null);
     assert.equal(await summary.evaluate(el => el.matches('summary, [role="button"]')), false);
     assert.equal(await summary.locator('.pg-chevron:visible').count(), 0);
+    assert.equal(await partialInfo.count(), 0, 'The scanning indicator has no partial-scan help');
     assert.notEqual(await panel.getAttribute('data-scanning'), null);
     assert.equal(await results.getAttribute('aria-busy'), 'true');
     assert.doesNotMatch(await summary.innerText(), /tracking indicators|partial scan|no tracking/i);
@@ -223,6 +226,12 @@ async function main() {
     const retry = panel.getByRole('button', {name: 'Retry scan', exact: true});
     assert.equal(await panel.getAttribute('open'), null, 'The panel starts collapsed for a new message');
     await retry.waitFor();
+    const attemptsBeforeHelp = requestsFor(secondId).length;
+    await partialInfo.focus();
+    await panel.getByRole('tooltip').waitFor();
+    await page.keyboard.press('Enter');
+    assert.equal(await panel.getAttribute('open'), null, 'Using the help keeps the findings collapsed');
+    assert.equal(requestsFor(secondId).length, attemptsBeforeHelp, 'Using the help does not retry the scan');
     assert.equal(await panel.getAttribute('data-scanning'), null);
     assert.notEqual(await results.getAttribute('aria-busy'), 'true');
     assert.equal(await sweep(), 'none');
@@ -242,6 +251,7 @@ async function main() {
     const [manualRoute] = await Promise.all([nextRoute(secondId), retry.click()]);
     await running.waitFor();
     assert.equal(await retry.isDisabled(), true);
+    assert.equal(await partialInfo.count(), 0, 'The help disappears while retrying');
     assert.doesNotMatch(await summary.innerText(), /tracking indicators|partial scan/i);
     assert.equal(await panel.locator('.pg-list li:visible, .pg-filter:visible').count(), 0);
     await manualRoute.fulfill({contentType: 'message/rfc822', body: raw});
@@ -253,6 +263,7 @@ async function main() {
     assert.notEqual(await panel.getAttribute('open'), null, 'The single click reveals the results');
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
     assert.doesNotMatch(await summary.innerText(), /partial scan/i);
+    assert.equal(await partialInfo.count(), 0, 'A successful retry clears the partial-scan help');
     assert.equal(await retry.count(), 0);
     await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
     assert.equal(requestsFor(secondId).length, secondRequestsBeforeRetry + 1);
@@ -352,6 +363,7 @@ async function main() {
       await page.locator('pre.raw_message_text').evaluate((node, source) => { node.textContent = source; },
         'Content-Type: ' + type + '; charset=UTF-8\r\n\r\n' + body);
       await summary.getByText(expected, {exact: true}).waitFor();
+      assert.equal(await partialInfo.count(), 0, 'A clean HTML or plain-text original needs no partial-scan help');
       assert.equal(await summary.evaluate(el => el.matches('summary, [role="button"]')), false);
       assert.equal(await panel.locator('.pg-chevron:visible, .pg-results:visible').count(), 0);
       await summary.click();

@@ -45,6 +45,7 @@
 }
 .pixelguard-gmail *, .pixelguard-gmail *::after { box-sizing: border-box; }
 .pixelguard-gmail > .pg-summary {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -60,7 +61,6 @@
 .pixelguard-gmail > div.pg-summary .pg-chevron { display: none; }
 .pixelguard-gmail > summary::-webkit-details-marker { display: none; }
 .pixelguard-gmail[data-scanning] > .pg-summary {
-  position: relative;
   overflow: hidden;
   border-inline-start-color: var(--pg-line);
 }
@@ -86,6 +86,21 @@
 .pixelguard-gmail > .pg-summary > img { width: 20px; height: 20px; flex: none; }
 .pixelguard-gmail > .pg-summary > strong { color: var(--pg-ink); font-size: 14px; }
 .pixelguard-gmail .pg-status { min-width: 0; color: var(--pg-muted); padding-inline-start: 7px; line-height: 1.35; }
+.pixelguard-gmail .pg-partial-help { margin-inline-start: 4px; }
+.pixelguard-gmail button.pg-partial-info {
+  display: inline-grid; place-items: center; vertical-align: middle; width: 20px; height: 20px;
+  padding: 0; border-radius: 50%; color: var(--pg-muted); cursor: help; font-size: 0;
+}
+.pixelguard-gmail .pg-partial-info::before {
+  content: "i"; width: 15px; height: 15px; border: 1px solid currentColor; border-radius: 50%;
+  font: bold 11px/14px Georgia, serif; text-align: center;
+}
+.pixelguard-gmail .pg-partial-tip {
+  position: absolute; z-index: 2; width: max-content; max-width: min(34ch, calc(100% - 8px));
+  padding: 7px 10px; border: 1px solid var(--pg-line); border-radius: 6px;
+  background: var(--pg-surface); color: var(--pg-ink); box-shadow: 0 2px 7px #0002;
+  font: 12px/1.45 system-ui, sans-serif; text-align: start; cursor: default;
+}
 .pixelguard-gmail > .pg-summary .pg-full-scan { margin-inline-start: auto; padding: 4px 10px; border: 1px solid var(--pg-action-border); border-radius: 6px; color: var(--pg-accent); background: var(--pg-surface); }
 .pixelguard-gmail > summary .pg-full-scan:not([hidden]) + .pg-chevron { margin-inline-start: 0; }
 .pixelguard-gmail [data-category="tracking-pixel"],

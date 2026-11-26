@@ -69,6 +69,39 @@
     return control;
   }
 
+  function partialScanHelp() {
+    const help = element("span", "pg-partial-help");
+    help.hidden = true;
+    const info = button("");
+    info.className = "pg-partial-info";
+    info.setAttribute("aria-label", t("gmailPartialInfo"));
+    const tip = element("span", "pg-partial-tip", t("gmailPartialExplanation"));
+    tip.hidden = true;
+    tip.id = "pixelguard-tip-" + crypto.randomUUID();
+    tip.setAttribute("role", "tooltip");
+    info.setAttribute("aria-describedby", tip.id);
+    help.append(info, tip);
+    function show() {
+      tip.hidden = false;
+      const bar = help.closest(".pg-summary").getBoundingClientRect();
+      const icon = info.getBoundingClientRect();
+      const left = Math.min(icon.left, bar.right - tip.offsetWidth - 4);
+      const above = icon.bottom + tip.offsetHeight > innerHeight && icon.top >= tip.offsetHeight;
+      tip.style.left = Math.max(4, left - bar.left) + "px";
+      tip.style.top = (above ? icon.top - tip.offsetHeight : icon.bottom) - bar.top + "px";
+    }
+    help.addEventListener("pointerenter", show);
+    help.addEventListener("pointerleave", () => { if (!info.matches(":focus-visible")) tip.hidden = true; });
+    info.addEventListener("focus", show);
+    info.addEventListener("blur", () => { tip.hidden = true; });
+    help.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      show();
+    });
+    return help;
+  }
+
   function createPanel(onFullScan) {
     const panel = element("div", "pixelguard-gmail");
     panel.dataset.theme = theme;
@@ -78,6 +111,9 @@
     logo.src = iconUrl;
     const status = element("span", "pg-status");
     status.setAttribute("role", "status");
+    const statusGroup = element("span");
+    const partialHelp = partialScanHelp();
+    statusGroup.append(status, partialHelp);
     const chevron = element("i", "pg-chevron");
     chevron.setAttribute("aria-hidden", "true");
     const originalButton = button(t("gmailRetryScan"));
@@ -88,7 +124,7 @@
       event.stopPropagation();
       if (event.isTrusted) onFullScan();
     });
-    summary.append(logo, element("strong", "", "PixelGuard"), status, originalButton, chevron);
+    summary.append(logo, element("strong", "", "PixelGuard"), statusGroup, originalButton, chevron);
     const tools = element("div", "pg-tools");
     const originalBar = element("div", "pg-original");
     const originalStatus = element("span");
@@ -116,11 +152,16 @@
     results.hidden = true;
     results.append(tools, list, empty, footer);
     panel.append(summary, results);
-    const state = {panel, summary, status, results, originalBar, originalButton, originalStatus, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    const state = {panel, summary, status, partialHelp, results, originalBar, originalButton, originalStatus, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
     return state;
+  }
+
+  function setPartialHelp(state, visible) {
+    state.partialHelp.hidden = !visible;
+    if (!visible) state.partialHelp.querySelector(".pg-partial-tip").hidden = true;
   }
 
   function setExpandable(state, expandable) {
@@ -238,14 +279,14 @@
     if (pages > 1) range.textContent = t("gmailRange", String(start + 1), String(Math.min(start + pageSize, entries.length)), String(entries.length));
   }
 
-  function render(state, body, result, originalLabels, originalFailed = false) {
+  function render(state, body, result, originalLabels, partial = false) {
     const items = [...result.suspicious, ...result.links, ...result.externals];
     const counts = new Map();
     for (const item of items) counts.set(item.classification, (counts.get(item.classification) || 0) + 1);
     // With images disabled Gmail may preserve the img and strip its source.
     const sources = ["src", "srcset", "data-src", "data-srcset", "data-original", "data-lazy", "data-lazy-src", "data-url"];
-    const unavailable = originalLabels ? [] : [...body.querySelectorAll("img")].filter(img =>
-      !sources.some(attr => img.getAttribute(attr)?.trim()));
+    const unavailable = partial ? [...body.querySelectorAll("img")].filter(img =>
+      !sources.some(attr => img.getAttribute(attr)?.trim())) : [];
     const missing = unavailable.length;
     const hasEntries = items.length + missing > 0;
     setExpandable(state, hasEntries);
@@ -264,7 +305,8 @@
       totals.push(total);
     }
     state.summary.dataset.category = totals[0]?.dataset.category || (missing ? "unavailable-image" : "");
-    if (missing || originalFailed) totals.push(t("gmailPartial"));
+    setPartialHelp(state, partial);
+    if (partial) totals.push(t("gmailPartial"));
     else if (!result.suspicious.length && !result.links.length) totals.unshift(t("gmailNoSignals"));
     state.status.replaceChildren(...totals.flatMap((total, index) => index ? [" · ", total] : [total]));
     for (const option of state.filter.options) {
@@ -481,11 +523,12 @@
           if (scanning) {
             setExpandable(view, false);
             view.results.hidden = true;
+            setPartialHelp(view, false);
             view.summary.removeAttribute("data-category");
             const label = t("gmailFullScanRunning");
             if (view.status.textContent !== label) view.status.textContent = label;
           } else {
-            render(view, body, result, entry.original?.labels, entry.failed);
+            render(view, body, result, entry.original?.labels, !entry.original && !entry.plainText);
           }
           view.panel.toggleAttribute("data-scanning", scanning);
           originalControls(entry);
@@ -562,6 +605,18 @@
       "download_url", "download", "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
   });
   const listenerOptions = {signal: lifetime.signal};
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    for (const {view} of messages.values()) {
+      if (view && !view.partialHelp.hidden) {
+        const tip = view.partialHelp.querySelector(".pg-partial-tip");
+        if (!tip.hidden) {
+          tip.hidden = true;
+          event.stopPropagation();
+        }
+      }
+    }
+  }, {capture: true, signal: lifetime.signal});
   function clearMessageSelection() { clearVtSelection(); attachments.clear(); }
   window.addEventListener("hashchange", () => { clearMessageSelection(); scheduleRefresh(); }, listenerOptions);
   window.addEventListener("pagehide", clearMessageSelection, listenerOptions);

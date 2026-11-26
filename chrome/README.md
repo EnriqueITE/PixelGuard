@@ -20,7 +20,7 @@ Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el aná
 
 PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
 
-Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo.
+Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si PixelGuard solo ha podido examinar parte del mensaje, la barra conserva los hallazgos y muestra **Análisis parcial**. Pasa el puntero por el icono de información o enfócalo con el teclado para saber qué ha quedado sin comprobar. Si falla la lectura del original, puedes volver a pedirlo con **Reintentar análisis**.
 
 El análisis automático de seguimiento admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB. Examina el cuerpo del correo y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
@@ -33,6 +33,8 @@ Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y ac
 En cada hallazgo con una dirección web compatible, pulsa **VirusTotal**, junto a **Copiar URL**, para abrir el widget con esa dirección seleccionada. Funciona también con la dirección de un píxel o de una imagen que PixelGuard ha encontrado en el original. Puedes cambiar la selección, elegir **Consultar dominio** o pulsar **Revisar URL completa**. La consulta de la URL se envía cuando la confirmas.
 
 En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
+
+Para saber qué se queda en tu navegador y qué recibe VirusTotal con cada acción, consulta el [aviso de privacidad de PixelGuard para Gmail](PRIVACY.md).
 
 PixelGuard cifra la clave de API localmente con AES-GCM. La clave de cifrado de Web Crypto es no exportable y se conserva en IndexedDB, en el origen privado de la extensión. El navegador no sincroniza estas claves. Alguien que controle tu sesión de Windows o el perfil del navegador aún podría usar la integración. En **Gestionar clave**, **Eliminar clave y desactivar** borra la clave de API guardada y desactiva las consultas.
 

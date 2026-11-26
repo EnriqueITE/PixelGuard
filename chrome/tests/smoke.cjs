@@ -78,9 +78,11 @@ async function main() {
       assert.equal(await panel(id).locator("li").count(), 1);
       assert.match(await panel(id).locator("li").textContent(), reason);
     }
-    const logoSummary = "No tracking indicators found · 1 external image";
-    await check("pixel", "1 possible tracking pixel", /events\.vendor\.test.*1\s*[×x]\s*1/i, "tracking-pixel");
-    await check("link", "1 link with tracking indicators", /click\.example\.test.*redirect/i, "tracking-link");
+    // These fixtures expose the rendered body but have no original message ID.
+    const logoSummary = "1 external image · Partial scan";
+    const linkSummary = "1 link with tracking indicators · Partial scan";
+    await check("pixel", "1 possible tracking pixel · Partial scan", /events\.vendor\.test.*1\s*[×x]\s*1/i, "tracking-pixel");
+    await check("link", linkSummary, /click\.example\.test.*redirect/i, "tracking-link");
     await check("logo", logoSummary, /external image/i, "external-image");
     assert.equal(await page.locator(".pixelguard-gmail").count(), 3);
     assert.equal(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches), true);
@@ -88,6 +90,20 @@ async function main() {
     assert.equal(await panelBackground(panel("logo")), "rgb(255, 255, 255)", "White is the default even on a dark OS");
     assert.equal(await page.evaluate(() => window.beforeInstall), true);
     await checkBadge(worker, tabId, "111", badgeColors.red);
+    const info = panel("pixel").getByRole("button", {name: "About this partial scan", exact: true});
+    const tip = panel("pixel").getByRole("tooltip", {includeHidden: true});
+    assert.equal(await tip.isVisible(), false);
+    await info.hover();
+    await tip.waitFor();
+    assert.match(await tip.innerText(), /Gmail/);
+    const tipId = await tip.getAttribute("id");
+    assert.ok(tipId, "The tooltip has an ID for screen readers");
+    assert.equal(await info.getAttribute("aria-describedby"), tipId);
+    await info.click();
+    assert.equal(await panel("pixel").getAttribute("open"), null, "Reading the help does not open the findings");
+    await panel("pixel").locator("summary").focus();
+    await page.mouse.move(0, 0);
+    await tip.waitFor({state: "hidden"});
     for (const name of names) {
       await panel(name).locator("summary").click();
       assert.ok(await panel(name).locator("li").isVisible());
@@ -112,15 +128,15 @@ async function main() {
       img.src = "https://ci3.googleusercontent.com/meips/example#" + img.src;
     });
     await page.locator("#pixel .a3s img").evaluate(img => img.removeAttribute("width"));
-    await check("pixel", "1 suspicious image", /events\.vendor\.test/, "suspicious-image");
+    await check("pixel", "1 suspicious image · Partial scan", /events\.vendor\.test/, "suspicious-image");
     await page.locator("#pixel .a3s img").evaluate(img => img.src = "https://ci3.googleusercontent.com/meips/opaque");
     await check("pixel", logoSummary, /ci3\.googleusercontent\.com/, "external-image");
     await page.locator("#link .a3s").evaluate(el => el.textContent = "https://click.example.test/plain");
-    await check("link", "1 link with tracking indicators", /click\.example\.test/, "tracking-link");
+    await check("link", linkSummary, /click\.example\.test/, "tracking-link");
     await page.locator("#link").evaluate(el => el.hidden = true);
     await panel("link").waitFor({ state: "detached" });
     await page.locator("#link").evaluate(el => el.hidden = false);
-    await check("link", "1 link with tracking indicators", /click\.example\.test/, "tracking-link");
+    await check("link", linkSummary, /click\.example\.test/, "tracking-link");
     const longUrl = "https://click.example.test/redirect?token=demo&campaign=" + "a".repeat(160);
     await page.locator("#link .a3s").evaluate((el, url) => {
       el.replaceChildren();
@@ -162,7 +178,7 @@ async function main() {
     await mixed.getByText("1–3 of 8").waitFor();
     assert.doesNotMatch(await mixed.innerText(), /Filter by type/i, "The filter label is only announced to assistive technology");
     await mixed.getByRole("button", {name:"Next"}).click();
-    await checkSummary("link", "1 possible tracking pixel · 1 suspicious image · 5 links with tracking indicators · 1 external image", colorFor["tracking-pixel"]);
+    await checkSummary("link", "1 possible tracking pixel · 1 suspicious image · 5 links with tracking indicators · 1 external image · Partial scan", colorFor["tracking-pixel"]);
     for (const category of ["tracking-pixel", "suspicious-image", "tracking-link", "external-image"]) {
       await select.selectOption(category);
       const rows = mixed.locator(".pg-list > li");
@@ -282,7 +298,7 @@ async function main() {
       pixel.src = "https://events.vendor.test/open.gif?uid=demo";
       body.append(pixel);
     });
-    await checkSummary("link", "1 possible tracking pixel · 25 links with tracking indicators · 24 external images", colorFor["tracking-pixel"]);
+    await checkSummary("link", "1 possible tracking pixel · 25 links with tracking indicators · 24 external images · Partial scan", colorFor["tracking-pixel"]);
     await checkBadge(probe, tabId, "1++", badgeColors.red);
     assert.equal(await probe.evaluate(tabId => chrome.action.getTitle({tabId}), tabId),
       "PixelGuard · Possible tracking pixels and suspicious images: 1 · External images: 24 · Links with tracking indicators: 25");
@@ -320,7 +336,7 @@ async function main() {
     assert.equal(await hidden.count(), 1);
     assert.equal(await hidden.locator(".pg-url,button").count(), 0);
     await page.locator("#link .a3s").evaluate(body => body.replaceChildren(document.createTextNode("Hello")));
-    await checkSummary("link", "No tracking indicators found", "rgb(214, 226, 226)");
+    await checkSummary("link", "Partial scan", "rgb(214, 226, 226)");
     const header = shop.locator(".pg-summary:visible");
     assert.equal(await shop.locator("summary:visible, .pg-chevron:visible").count(), 0);
     await header.click();
@@ -336,8 +352,16 @@ async function main() {
       node.after(after);
       before.focus();
     });
+    await page.mouse.move(0, 0);
     await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement.id), "after-clean-bar", "Tab skips the empty bar");
+    const emptyInfo = shop.getByRole("button", {name: "About this partial scan", exact: true});
+    const emptyTip = shop.getByRole("tooltip", {includeHidden: true});
+    assert.equal(await emptyInfo.evaluate(el => document.activeElement === el), true);
+    await emptyTip.waitFor();
+    assert.equal(await shop.getAttribute("open"), null);
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "after-clean-bar");
+    await emptyTip.waitFor({state: "hidden"});
 
     await page.locator("#link .a3s").evaluate(body => {
       const img = new Image(180, 48);
@@ -350,7 +374,7 @@ async function main() {
     await page.keyboard.press("Enter");
     await shop.locator('li[data-category="external-image"]').waitFor();
     await page.locator("#link .a3s img").evaluate(img => img.remove());
-    await checkSummary("link", "No tracking indicators found", "rgb(214, 226, 226)");
+    await checkSummary("link", "Partial scan", "rgb(214, 226, 226)");
     assert.equal(await shop.locator("summary:visible, .pg-chevron:visible").count(), 0);
     assert.equal(await shop.getAttribute("open"), null, "The open list closes when Gmail removes its last row");
     await page.goto("https://example.test/");
