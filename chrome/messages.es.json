@@ -1,4 +1,7 @@
 {
+  "gmailExtensionName": { "message": "PixelGuard para Gmail" },
+  "pgLanguage": { "message": "Idioma" },
+  "pgBrowserLanguage": { "message": "Idioma del navegador" },
   "gmailDescription": { "message": "Muestra indicios de seguimiento en los mensajes abiertos en Gmail con el detector local de PixelGuard." },
   "gmailNoSignals": { "message": "Sin indicios de seguimiento" },
   "gmailPartial": { "message": "Análisis parcial" },

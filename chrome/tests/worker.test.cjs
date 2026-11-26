@@ -35,13 +35,12 @@ function harness(shared = { data: {} }) {
       async openPopup(options) { openedPopups.push(clone(options)); },
       async setBadgeText({ tabId, text }) { setBadge(tabId, { text }); },
       async setBadgeBackgroundColor({ tabId, color }) { setBadge(tabId, { color }); },
-      async setTitle({ tabId, title }) { setBadge(tabId, { title }); }
+      async setTitle({ tabId, title }) {
+        if (tabId === undefined) shared.defaultTitle = title;
+        else setBadge(tabId, { title });
+      }
     },
-    i18n: { getMessage(key, values) {
-      if (key === 'gmailFullScanRunning') return 'Analyzing the message';
-      assert.equal(key, 'badgeFindingsTitle');
-      return values.join(', ');
-    } },
+    i18n: { getUILanguage: () => shared.browserLanguage || 'en-US' },
     storage: { local: {
       async setAccessLevel({ accessLevel }) { access = accessLevel; },
       async get(keys) {
@@ -79,6 +78,13 @@ function harness(shared = { data: {} }) {
       return { ok: true, status: 200, json: async () => ({ data: { url: report, detection_ratio: { detections: 1, total: 80 } } }) };
     },
     importScripts: (...names) => names.forEach(name => {
+      if (name === 'i18n-catalogs.js') {
+        context.PixelGuardCatalogs = {
+          'en-US': {gmailExtensionName: 'PixelGuard for Gmail', gmailFullScanRunning: 'Analyzing the message', badgeFindingsTitle: '$1, $2, $3'},
+          es: {gmailExtensionName: 'PixelGuard para Gmail', gmailFullScanRunning: 'Analizando el mensaje', badgeFindingsTitle: 'Resultados: $1, $2, $3'}
+        };
+        return;
+      }
       const filename = path.join(root, 'chrome', name);
       vm.runInContext(fs.readFileSync(filename, 'utf8'), context);
       if (name === 'vault.js') {
@@ -104,16 +110,16 @@ function harness(shared = { data: {} }) {
   };
 }
 
-test('the Gmail page only receives panel visibility and theme, including when settings change', async () => {
+test('the Gmail page only receives display preferences, including when settings change', async () => {
   const h = harness();
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true, theme: 'light' });
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true, theme: 'light', language: 'auto' });
   for (const type of ['pg:settings', 'pg:lookup', 'pg:state']) {
     assert.equal((await h.send(type, { apiKey: sample }, h.gmail)).error, 'unauthorized');
   }
   await h.send('pg:settings', { showPanel: false, apiKey: sample });
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false, theme: 'light' });
-  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light' })));
-  assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false, theme: 'light' });
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false, theme: 'light', language: 'auto' });
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light', language: 'auto' })));
+  assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false, theme: 'light', language: 'auto' });
   assert.equal(h.requests.length, 0);
 });
 
@@ -257,12 +263,34 @@ test('changing theme preserves other preferences and remains local across worker
   assert.equal((await h.send('pg:settings', { theme: 'system', showPanel: true })).ok, false);
   assert.deepEqual(h.broadcasts, []);
   assert.equal((await h.send('pg:settings', { theme: 'dark' })).theme, 'dark');
-  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'dark' })));
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'dark', language: 'auto' })));
   const reopened = harness(shared);
-  assert.deepEqual(await reopened.send('pg:panel', {}, reopened.gmail), {ok: true, showPanel: false, theme: 'dark'});
+  assert.deepEqual(await reopened.send('pg:panel', {}, reopened.gmail), {ok: true, showPanel: false, theme: 'dark', language: 'auto'});
   assert.equal((await reopened.send('pg:settings', {showPanel: true})).theme, 'dark');
   assert.equal((await reopened.send('pg:settings', {theme: 'light'})).showPanel, true);
   assert.deepEqual(reopened.requests, []);
+});
+
+test('toolbar titles follow the browser by default and restore the selected language after worker restart', async () => {
+  const shared = {data: {language: 'unknown'}, browserLanguage: 'es-MX'};
+  const h = harness(shared);
+  const counts = {suspicious: 3, externals: 1, links: 2};
+  assert.equal((await h.send('pg:state')).language, 'auto');
+  await h.send('pg:badge', counts, h.gmail);
+  assert.equal(h.badges.get(1).title, 'Resultados: 3, 1, 2');
+  for (const language of ['invalid', ['es'], null, {}]) {
+    assert.equal((await h.send('pg:settings', {language})).error, 'unavailable');
+  }
+  assert.equal((await h.send('pg:settings', {language: 'en-US'})).language, 'en-US');
+  assert.equal(shared.defaultTitle, 'PixelGuard for Gmail');
+  const restarted = harness(shared);
+  await restarted.send('pg:badge', counts, restarted.gmail);
+  assert.equal(restarted.badges.get(1).title, '3, 1, 2');
+  await restarted.send('pg:settings', {language: 'auto'});
+  await restarted.send('pg:badge', {...counts, scanning: true}, restarted.gmail);
+  assert.equal(restarted.badges.get(1).title, 'Analizando el mensaje');
+  assert.equal(shared.defaultTitle, 'PixelGuard para Gmail');
+  assert.deepEqual(restarted.requests, []);
 });
 
 test('the Gmail toolbar badge shows counts and the highest-priority color for each tab', async () => {

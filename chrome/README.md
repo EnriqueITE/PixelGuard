@@ -2,7 +2,9 @@
 
 Prototipo de PixelGuard para Gmail en Chrome y Brave de escritorio. Su código, manifiesto, versión y pruebas están en `chrome/`. La extensión de Thunderbird sigue en la raíz del mismo repositorio.
 
-Al expandir un mensaje en Gmail, PixelGuard añade un resumen encima del cuerpo. Despliega el resumen para ver el texto del enlace, su dirección completa y el motivo de la detección. Puedes copiar cada URL y recorrer los resultados de tres en tres. La interfaz sigue el idioma del navegador y está disponible en español e inglés.
+Al expandir un mensaje en Gmail, PixelGuard añade un resumen encima del cuerpo. Despliega el resumen para ver el texto del enlace, su dirección completa y el motivo de la detección. Puedes copiar cada URL y recorrer los resultados de tres en tres.
+
+PixelGuard usa el idioma del navegador de forma predeterminada. En los ajustes del popup, **Idioma** permite elegir inglés de Estados Unidos, alemán, griego, español, francés, italiano, ruso o chino simplificado. El cambio se aplica también a los mensajes abiertos y al widget de VirusTotal. Elige **Idioma del navegador** para volver al modo automático. Si el idioma del navegador no está disponible, PixelGuard usa inglés.
 
 ## Cargar en Chrome
 
@@ -61,6 +63,7 @@ node chrome/tests/smoke.cjs
 node chrome/tests/original-smoke.cjs
 node chrome/tests/context-reload-smoke.cjs
 node chrome/tests/popup-smoke.cjs
+node chrome/tests/language-smoke.cjs
 node chrome/tests/row-vt-smoke.cjs
 node chrome/tests/attachment-smoke.cjs
 ```

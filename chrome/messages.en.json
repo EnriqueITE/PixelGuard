@@ -1,4 +1,7 @@
 {
+  "gmailExtensionName": { "message": "PixelGuard for Gmail" },
+  "pgLanguage": { "message": "Language" },
+  "pgBrowserLanguage": { "message": "Browser language" },
   "gmailDescription": { "message": "See tracking indicators in open Gmail messages, with evidence from PixelGuard's local scanner." },
   "gmailNoSignals": { "message": "No tracking indicators found" },
   "gmailPartial": { "message": "Partial scan" },

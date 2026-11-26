@@ -1,16 +1,19 @@
 """Build the unpacked Chrome extension from its adapter and shared PixelGuard files."""
 import json
+import re
 from pathlib import Path
 from shutil import copyfile
 
 SOURCE = Path(__file__).resolve().parent
 ROOT = SOURCE.parent
 OUTPUT = ROOT / "dist" / "chrome-gmail"
+LOCALES = {"en-US": "en", "de": "de", "el": "el", "es": "es", "fr": "fr",
+           "it": "it", "ru": "ru", "zh-CN": "zh_CN"}
 
 
 def build():
     files = {name: SOURCE / name for name in (
-        "manifest.json", "PRIVACY.md", "gmail.js", "gmail.css", "scanner.js", "worker.js", "vault.js",
+        "manifest.json", "PRIVACY.md", "gmail.js", "gmail.css", "scanner.js", "worker.js", "vault.js", "i18n.js",
         "popup.html", "popup.css", "popup-url.js", "popup-attachments.js", "popup.js",
         "virustotal/inventory.js", "virustotal/widget.js", "virustotal/attachments.js",
         "original-mime.js", "original-scan.js", "gmail-original.js", "gmail-attachments.js"
@@ -24,7 +27,8 @@ def build():
         target = OUTPUT / name
         target.parent.mkdir(parents=True, exist_ok=True)
         copyfile(source, target)
-    for locale in ("en", "es"):
+    catalogs = {}
+    for language, locale in LOCALES.items():
         catalog = Path("_locales") / locale / "messages.json"
         shared = json.loads((ROOT / catalog).read_text(encoding="utf-8"))
         messages = {key: value for key, value in shared.items()
@@ -33,6 +37,13 @@ def build():
         target = OUTPUT / catalog
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(messages, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Use the same messages for the browser's manifest and the user's in-app override.
+        catalogs[language] = {
+            key: re.sub(r"\$(\w+)\$", lambda m: entry["placeholders"][m[1].lower()]["content"],
+                        entry["message"]) for key, entry in messages.items()
+        }
+    compiled = json.dumps(catalogs, ensure_ascii=False, separators=(",", ":"))
+    (OUTPUT / "i18n-catalogs.js").write_text("globalThis.PixelGuardCatalogs = " + compiled + ";\n", encoding="utf-8")
     print(OUTPUT)
 
 

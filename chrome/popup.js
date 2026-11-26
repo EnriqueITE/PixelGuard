@@ -1,10 +1,12 @@
-/* global chrome, PixelGuardVTInventory, initUrlPicker, readGmailAttachment */
+/* global chrome, PixelGuardI18n, PixelGuardVTInventory, initUrlPicker, readGmailAttachment */
 (() => {
   const el = id => document.getElementById(id);
-  const t = (key, ...args) => chrome.i18n.getMessage(key, args.map(String));
+  const {t} = PixelGuardI18n;
   const validKey = /^[A-Za-z0-9_-]{16,256}$/;
   const send = (type, fields = {}) => chrome.runtime.sendMessage({ type: "pg:" + type, ...fields });
   let state;
+  let language;
+  let resultForDisplay;
   let saving = false;
   let pending = false;
   let revision = 0;
@@ -16,21 +18,40 @@
   let rowAttachment, attachmentRead, uploadOffer;
   let attachments = [];
 
-  document.documentElement.lang = chrome.i18n.getUILanguage();
-  for (const item of document.querySelectorAll("[data-msg]")) item.textContent = t(item.dataset.msg);
+  for (const [locale, name] of Object.entries(PixelGuardI18n.languages)) {
+    const option = new Option(name, locale);
+    option.lang = locale;
+    el("language").add(option);
+  }
   const urlPicker = initUrlPicker(forgetLookup);
 
-  function status(text = "", error = false) {
+  function applyLanguage(preference) {
+    language = PixelGuardI18n.validPreference(preference) ? preference : "auto";
+    PixelGuardI18n.use(language);
+    document.documentElement.lang = PixelGuardI18n.locale;
+    document.title = t("gmailExtensionName");
+    el("language").value = language;
+    for (const item of document.querySelectorAll("[data-msg]")) item.textContent = t(item.dataset.msg);
+    el("url").placeholder = t("pgChooseLink");
+    el("show-links").setAttribute("aria-label", t("pgThreadLinks"));
+    el("attachments").title = el("attachments").selectedOptions[0]?.textContent || "";
+    if (resultForDisplay && !el("result").hidden) renderResultText(resultForDisplay);
+    if (uploadOffer) renderUploadName(uploadOffer.file);
+  }
+  function status(key = "", error = false) {
     const line = el("status");
-    line.hidden = !text;
-    line.textContent = text;
+    line.hidden = !key;
+    if (key) line.dataset.msg = key; else delete line.dataset.msg;
+    line.textContent = key ? t(key) : "";
     line.dataset.error = String(error);
   }
   function showError(code) {
-    status(t("vt_error_" + code) || t("vt_error_generic"), true);
+    const key = "vt_error_" + code;
+    status(t(key) ? key : "vt_error_generic", true);
   }
   function forgetLookup() {
     revision++;
+    resultForDisplay = null;
     attachmentRead?.abort();
     attachmentRead = null;
     uploadOffer = null;
@@ -61,12 +82,14 @@
   function paint() {
     // Native controls show the user's selection until the save settles.
     if (!saving) {
+      el("language").value = language;
       el("panel-toggle").checked = state.showPanel;
       el("dark-mode").checked = state.theme === "dark";
       el("vt-toggle").checked = state.vtEnabled;
     }
     document.documentElement.dataset.theme = el("dark-mode").checked ? "dark" : "light";
     el("dark-mode").disabled = saving;
+    el("language").disabled = saving;
     el("panel-toggle").disabled = saving;
     el("vt-toggle").hidden = !state.hasKey;
     el("vt-toggle").disabled = saving;
@@ -89,7 +112,7 @@
     saving = true;
     let enabled = false;
     paint();
-    status();
+    if (!patch.language) status();
     try {
       // Request directly from the initiating click, before any worker message.
       if (permission && !await chrome.permissions.request({ origins: ["https://www.virustotal.com/*"] })) {
@@ -101,11 +124,15 @@
         if (!current?.ok) return showError(current?.error);
         state = current;
         keyForm(false);
-        return status(t("pgKeyConflict"));
+        return status("pgKeyConflict");
       }
       if (!next?.ok) return showError(next?.error);
       enabled = next.vtEnabled && !state.vtEnabled;
       state = next;
+      if (patch.language) {
+        applyLanguage(next.language);
+        return;
+      }
       if (patch.vtEnabled === false || patch.apiKey === "") {
         rowUrl = "";
         rowAttachment = null;
@@ -122,7 +149,7 @@
         el("truncated").hidden = true;
       }
       if (close) keyForm(false);
-      if (patch.apiKey) status(t("vt_keySaved"));
+      if (patch.apiKey) status("vt_keySaved");
     } catch { showError("storage"); }
     finally {
       saving = false;
@@ -134,6 +161,7 @@
     }
   }
   el("panel-toggle").onchange = event => save({ showPanel: event.target.checked });
+  el("language").onchange = event => save({ language: event.target.value });
   el("dark-mode").onchange = event => save({ theme: event.target.checked ? "dark" : "light" });
   el("vt-toggle").onchange = event => {
     const enabled = event.target.checked;
@@ -191,7 +219,7 @@
       } else {
         if (state.hasKey) el("vt-toggle").focus();
         else if (el("key-form").hidden) keyForm(true);
-        status(t(rowAttachment ? "pgEnableAttachmentVT" : "pgRowEnableVT"));
+        status(rowAttachment ? "pgEnableAttachmentVT" : "pgRowEnableVT");
       }
     } catch { /* The toolbar also works on tabs without a Gmail content script. */ }
   }
@@ -223,7 +251,9 @@
     const names = new Map();
     for (const item of attachments) names.set(item.name, (names.get(item.name) || 0) + 1);
     const numbered = new Map();
-    const placeholder = new Option(t(attachments.length ? "pgChooseAttachment" : emptyText), "");
+    const placeholderKey = attachments.length ? "pgChooseAttachment" : emptyText;
+    const placeholder = new Option(t(placeholderKey), "");
+    placeholder.dataset.msg = placeholderKey;
     select.replaceChildren(placeholder);
     for (const item of attachments) {
       let label = item.name;
@@ -282,14 +312,21 @@
     forgetLookup();
   };
 
-  function present(result, fileHash) {
+  function renderResultText(result) {
     el("result-title").textContent = result.status === "submitted" ? t("pgFileSubmitted") :
       result.status === "no_report" ? t("vt_noReport") :
       Number.isInteger(result.total) ? t("vt_ratio", result.detections, result.total) : t("pgReportFound");
-    el("zero-note").hidden = result.detections !== 0;
-    el("result-time").hidden = result.status === "submitted";
     el("result-time").textContent = result.status === "submitted" ? "" :
       t("vt_queriedAt", new Date(result.queriedAt).toLocaleString(document.documentElement.lang));
+  }
+  function renderUploadName(file) {
+    el("upload-file-name").textContent = file.name + " · " + file.size.toLocaleString(document.documentElement.lang) + " B";
+  }
+  function present(result, fileHash) {
+    resultForDisplay = result;
+    renderResultText(result);
+    el("zero-note").hidden = result.detections !== 0;
+    el("result-time").hidden = result.status === "submitted";
     const report = el("report");
     const href = fileHash && result.status !== "no_report" ? "https://www.virustotal.com/gui/file/" + fileHash :
       PixelGuardVTInventory.reportUrl(result.reportUrl);
@@ -318,7 +355,7 @@
     const controller = new AbortController();
     attachmentRead = controller;
     updateButtons();
-    status(t("pgHashingAttachment"));
+    status("pgHashingAttachment");
     try {
       sourceTab ??= sourceTabId();
       const file = await readGmailAttachment(await sourceTab, selected, controller.signal);
@@ -327,7 +364,7 @@
       if (current !== revision) return;
       el("attachment-sha").textContent = hash;
       el("attachment-digest").hidden = false;
-      status(t("vt_querying"));
+      status("vt_querying");
       const reply = await send("attachmentReport", {hash});
       if (current !== revision) return;
       if (!reply?.ok) return showError(reply?.error);
@@ -335,7 +372,7 @@
       present(reply.result, hash);
       if (reply.result.status === "no_report" && reply.uploadToken) {
         uploadOffer = {file, hash, token: reply.uploadToken};
-        el("upload-file-name").textContent = file.name + " · " + file.size.toLocaleString(document.documentElement.lang) + " B";
+        renderUploadName(file);
         el("upload-confirmation").hidden = false;
       }
     } catch (error) {
@@ -362,7 +399,7 @@
     el("result").hidden = true;
     pending = true;
     updateButtons();
-    status(t("pgUploadingFile"));
+    status("pgUploadingFile");
     let blobUrl;
     try {
       blobUrl = URL.createObjectURL(file);
@@ -386,7 +423,7 @@
     const current = revision;
     pending = true;
     updateButtons();
-    status(t("vt_querying"));
+    status("vt_querying");
     try {
       if (kind === "hash") {
         if (!file || file.size > PixelGuardVTInventory.MAX_FILE_BYTES) return showError("too_large");
@@ -419,11 +456,21 @@
   el("cancel-url").onclick = () => { forgetLookup(); el("preview-url").focus(); };
   el("confirm-url").onclick = () => { if (preview) lookup("url", preview); };
   el("query-hash").onclick = () => el("attachments").value ? queryAttachment() : lookup("hash", null, el("file").files[0]);
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area === "local" && changes.language) {
+      applyLanguage(changes.language.newValue);
+      if (state) paint();
+    }
+  });
   send("state").then(reply => {
+    applyLanguage(language ?? reply?.language);
     if (!reply?.ok) return showError(reply?.error);
     state = reply;
     paint();
     takeRowSelection();
     if (state.vtEnabled) loadInventories();
-  }).catch(() => showError("storage"));
+  }).catch(() => {
+    applyLanguage(language);
+    showError("storage");
+  });
 })();

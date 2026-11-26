@@ -18,6 +18,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { width: 366px; margin: 0; background: var(--surface); color: var(--text); }
+html:not([lang]) body { visibility: hidden; }
 header { display: flex; align-items: center; gap: 9px; padding: 15px 19px; border-bottom: 1px solid var(--line); }
 h1, h2, p { margin: 0; }
 h1 { font-size: 19px; letter-spacing: -.6px; line-height: 1.1; }
@@ -26,6 +27,7 @@ main { padding: 0 18px 15px; }
 h2, .setting > label { font-size: 14px; font-weight: 650; }
 .setting { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 14px 0; }
 .setting.appearance { padding-top: 0; }
+#language { max-width: 72%; min-width: 0; padding: 4px 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--surface); font: inherit; }
 section { border-top: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 12px; }
 button, input { font: inherit; }

@@ -1,4 +1,4 @@
-/* global chrome, PixelGuardScanner, PixelGuardVTInventory, PixelGuardGmailOriginal, PixelGuardGmailAttachments, PixelGuardOriginalScan, PixelGuardOriginalMime */
+/* global chrome, PixelGuardI18n, PixelGuardScanner, PixelGuardVTInventory, PixelGuardGmailOriginal, PixelGuardGmailAttachments, PixelGuardOriginalScan, PixelGuardOriginalMime */
 (() => {
   if (globalThis.pixelGuardGmailAttached || !location.pathname.startsWith("/mail/")) return;
   globalThis.pixelGuardGmailAttached = true;
@@ -20,7 +20,7 @@
   let showPanel = false;
   let theme = "light";
   const attachments = PixelGuardGmailAttachments.create(openVirusTotal, contextActive);
-  const t = (key, ...values) => chrome.i18n.getMessage(key, values);
+  const t = PixelGuardI18n.t;
   // Show the highest-priority group first, also used for the summary's accent.
   const categories = {
     "tracking-pixel": ["gmailPixel", "gmailPixels"],
@@ -74,7 +74,6 @@
     help.hidden = true;
     const info = button("");
     info.className = "pg-partial-info";
-    info.setAttribute("aria-label", t("gmailPartialInfo"));
     const tip = element("span", "pg-partial-tip");
     tip.hidden = true;
     tip.id = "pixelguard-tip-" + crypto.randomUUID();
@@ -116,7 +115,7 @@
     statusGroup.append(status, partialHelp);
     const chevron = element("i", "pg-chevron");
     chevron.setAttribute("aria-hidden", "true");
-    const originalButton = button(t("gmailRetryScan"));
+    const originalButton = button("");
     originalButton.className = "pg-full-scan";
     originalButton.hidden = true;
     if (onFullScan) originalButton.addEventListener("click", event => {
@@ -132,18 +131,17 @@
     originalBar.append(originalStatus);
     originalBar.hidden = true;
     const filter = element("select", "pg-filter");
-    filter.setAttribute("aria-label", t("gmailFilterLabel"));
     for (const value of Object.keys(filterLabels)) {
       const option = element("option");
       option.value = value;
       filter.append(option);
     }
     const list = element("ul", "pg-list");
-    const empty = element("div", "pg-empty", t("gmailNoMatches"));
+    const empty = element("div", "pg-empty");
     empty.setAttribute("role", "status");
     const footer = element("div", "pg-pager");
-    const prev = button(t("gmailPrevious"));
-    const next = button(t("gmailNext"));
+    const prev = button("");
+    const next = button("");
     const range = element("span", "pg-range");
     range.setAttribute("aria-live", "polite");
     footer.append(range, prev, next);
@@ -153,10 +151,21 @@
     results.append(tools, list, empty, footer);
     panel.append(summary, results);
     const state = {panel, summary, status, partialHelp, results, originalBar, originalButton, originalStatus, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
+    localizePanel(state);
     filter.addEventListener("change", () => { state.page = 0; drawPage(state); });
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
     return state;
+  }
+
+  function localizePanel(state) {
+    state.panel.lang = PixelGuardI18n.locale;
+    state.originalButton.textContent = t("gmailRetryScan");
+    state.empty.textContent = t("gmailNoMatches");
+    state.prev.textContent = t("gmailPrevious");
+    state.next.textContent = t("gmailNext");
+    state.filter.setAttribute("aria-label", t("gmailFilterLabel"));
+    state.partialHelp.querySelector("button").setAttribute("aria-label", t("gmailPartialInfo"));
   }
 
   function setPartialHelp(state, explanation) {
@@ -170,6 +179,7 @@
     if (state.panel.matches("details") === expandable) return;
     const panel = element(expandable ? "details" : "div", "pixelguard-gmail");
     panel.dataset.theme = theme;
+    panel.lang = PixelGuardI18n.locale;
     const summary = element(expandable ? "summary" : "div", "pg-summary");
     summary.append(...state.summary.childNodes);
     panel.append(summary, state.results);
@@ -304,7 +314,8 @@
     for (const [type, labels] of Object.entries(categories)) {
       const count = counts.get(type);
       if (!count) continue;
-      const total = element("span", "pg-total", count + " " + t(labels[count === 1 ? 0 : 1]));
+      const noun = t(PixelGuardI18n.pluralKey(labels[0], labels[1], count));
+      const total = element("span", "pg-total", count + (PixelGuardI18n.locale === "zh-CN" ? "" : " ") + noun);
       total.dataset.category = type;
       totals.push(total);
     }
@@ -408,7 +419,8 @@
     originalButton.disabled = entry.retryState === "pending";
     let text = "";
     if (entry.retryState === "failed") text = t("gmailFullScanFailed");
-    else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") : t("gmailUnavailableImages", String(missing));
+    else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") :
+      t(PixelGuardI18n.pluralKey(null, "gmailUnavailableImages", missing), missing);
     else if (entry.failed) text = t("gmailOriginalFailed");
     originalBar.hidden = !text;
     if (originalStatus.textContent !== text) originalStatus.textContent = text;
@@ -477,15 +489,16 @@
     const record = originalPageRecord;
     const result = record.scan?.result;
     updateBadge(result?.suspicious.length || 0, result?.externals.length || 0, result?.links.length || 0);
-    if (showPanel && !record.view) {
-      const view = createPanel();
+    if (showPanel && (!record.view || record.view.panel.lang !== PixelGuardI18n.locale)) {
+      const view = record.view || createPanel();
+      if (record.view) localizePanel(view);
       if (result) {
         render(view, null, result, record.scan);
       } else {
         view.status.textContent = t("gmailOriginalUnsupported");
         view.filter.hidden = view.footer.hidden = view.empty.hidden = true;
       }
-      raw.before(view.panel);
+      if (!record.view) raw.before(view.panel);
       record.view = view;
     } else if (!showPanel && record.view) {
       record.view.panel.remove();
@@ -534,7 +547,9 @@
         if (mount) entry.view = createPanel(() => requestFullScan(body, entry));
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
         const view = entry.view;
-        if (updated || mount || scanning !== view.panel.hasAttribute("data-scanning")) {
+        const languageChanged = view.panel.lang !== PixelGuardI18n.locale;
+        if (languageChanged) localizePanel(view);
+        if (updated || mount || languageChanged || scanning !== view.panel.hasAttribute("data-scanning")) {
           view.results.setAttribute("aria-busy", String(scanning));
           if (scanning) {
             setExpandable(view, false);
@@ -652,6 +667,9 @@
   let receivedPreference = false;
   function applyPreferences(preferences) {
     receivedPreference = true;
+    const oldLocale = PixelGuardI18n.locale;
+    PixelGuardI18n.use(preferences.language);
+    if (PixelGuardI18n.locale !== oldLocale) lastCounts = "";
     showPanel = preferences.showPanel === true;
     theme = preferences.theme === "dark" ? "dark" : "light";
     for (const entry of messages.values()) {

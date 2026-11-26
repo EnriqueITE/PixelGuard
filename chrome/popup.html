@@ -1,10 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PixelGuard</title>
   <link rel="stylesheet" href="popup.css">
+  <script defer src="i18n-catalogs.js"></script>
+  <script defer src="i18n.js"></script>
   <script defer src="virustotal/inventory.js"></script>
   <script defer src="popup-url.js"></script>
   <script defer src="popup-attachments.js"></script>
@@ -20,6 +22,12 @@
     <div class="setting appearance">
       <label for="dark-mode" data-msg="pgDarkMode"></label>
       <input id="dark-mode" class="switch" type="checkbox" role="switch" disabled>
+    </div>
+    <div class="setting appearance">
+      <label for="language" data-msg="pgLanguage"></label>
+      <select id="language" disabled>
+        <option value="auto" data-msg="pgBrowserLanguage"></option>
+      </select>
     </div>
     <section aria-labelledby="vt-title">
       <div class="setting">

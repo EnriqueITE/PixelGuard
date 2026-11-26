@@ -21,7 +21,7 @@ VirusTotal comparte los informes del análisis con su comunidad y puede comparti
 
 ## Qué queda en tu navegador
 
-PixelGuard procesa el correo y los adjuntos en memoria. No crea un archivo de mensajes, adjuntos ni informes. Guarda en el perfil local el tema, la visibilidad de la barra, el estado de VirusTotal y las horas de las consultas para controlar la cuota. Cuando VirusTotal desconoce un adjunto, la extensión también conserva en la sesión su huella y una autorización válida durante diez minutos para que puedas confirmar la subida.
+PixelGuard procesa el correo y los adjuntos en memoria. No crea un archivo de mensajes, adjuntos ni informes. Guarda en el perfil local el idioma, el tema, la visibilidad de la barra, el estado de VirusTotal y las horas de las consultas para controlar la cuota. Cuando VirusTotal desconoce un adjunto, la extensión también conserva en la sesión su huella y una autorización válida durante diez minutos para que puedas confirmar la subida.
 
 La clave de API se guarda cifrada con AES-GCM. La clave que permite descifrarla es no exportable y se guarda en IndexedDB dentro del perfil de la extensión. PixelGuard no sincroniza estas claves entre dispositivos.
 

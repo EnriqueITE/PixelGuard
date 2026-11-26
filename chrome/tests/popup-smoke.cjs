@@ -6,7 +6,9 @@ const path = require("node:path");
 const { chromium } = require("playwright-core");
 
 const extension = path.resolve(__dirname, "../../dist/chrome-gmail");
-const catalog = JSON.parse(fs.readFileSync(path.join(extension, "_locales/es/messages.json"), "utf8"));
+const readCatalog = locale => JSON.parse(fs.readFileSync(path.join(extension, "_locales", locale, "messages.json"), "utf8"));
+const catalog = readCatalog("es");
+const english = readCatalog("en");
 const sample = "https://tracking.example.test/tickets/buy?campaign=summer&recipient=" + "abcdef12".repeat(30) + "#end";
 async function run() {
   const browser = await chromium.launch({
@@ -26,22 +28,24 @@ async function run() {
       }
       return route.fulfill({ path: path.join(extension, url.pathname.slice(1)) });
     });
-    await page.addInitScript(({ catalog, sample }) => {
+    await page.addInitScript(({sample}) => {
       const fixture = JSON.parse(sessionStorage.getItem("rowFixture") || "{}");
-      const state = { ok: true, hasKey: false, showPanel: true, vtEnabled: false, ...fixture.state };
+      const state = { ok: true, hasKey: false, showPanel: true, vtEnabled: false,
+        language: sessionStorage.getItem("language") || "auto", ...fixture.state };
       window.testState = { granted: false, lookups: [], permissionRequests: 0, settings: [], inventory: 0, mail: [],
         reads: [], reports: [], uploads: [] };
       const test = window.testState;
       test.links = [{ url: sample, label: "COMPRAR ENTRADAS" }, { url: "https://example.test/help", label: "Ayuda" }];
+      const listeners = [];
+      test.setLanguage = value => {
+        const oldValue = state.language;
+        state.language = value;
+        sessionStorage.setItem("language", value);
+        for (const listener of listeners) listener({language: {oldValue, newValue: value}}, "local");
+      };
       const api = {
-        i18n: {
-          getUILanguage: () => "es",
-          getMessage(key, subs) {
-            const entry = catalog[key];
-            return entry?.message.replace(/\$(\w+)\$/g, (_, name) =>
-              subs[Number(entry.placeholders[name.toLowerCase()].content.slice(1)) - 1]) || "";
-          }
-        },
+        i18n: {getUILanguage: () => fixture.browserLanguage || "es"},
+        storage: {onChanged: {addListener: fn => listeners.push(fn)}},
         permissions: { request: async () => { test.permissionRequests++; return test.granted; } },
         tabs: {
           query: async () => [{ id: 1 }],
@@ -95,6 +99,7 @@ async function run() {
               return { ok: false, error: "key_exists" };
             }
             if ("apiKey" in msg) state.hasKey = !!msg.apiKey;
+            if ("language" in msg) test.setLanguage(msg.language);
             for (const key of ["showPanel", "theme", "vtEnabled"]) if (key in msg) state[key] = msg[key];
           }
           if (msg.type === "pg:lookup") {
@@ -117,10 +122,33 @@ async function run() {
         } }
       };
       Object.assign(window.chrome, api);
-    }, {catalog, sample});
+    }, {sample});
     await page.goto("https://popup.example.test/popup.html");
     const q = id => page.locator("#" + id);
     await q("setup").waitFor();
+    assert.equal(await q("language").inputValue(), "auto");
+    assert.equal(await q("language").locator("option:checked").textContent(), catalog.pgBrowserLanguage.message);
+    const locales = ["en-US", "de", "el", "es", "fr", "it", "ru", "zh-CN"];
+    assert.deepEqual(await q("language").locator("option").evaluateAll(nodes => nodes.map(node => node.value)),
+      ["auto", ...locales]);
+    async function chooseLanguage(value, expected = value) {
+      await q("language").selectOption(value);
+      await page.waitForFunction(locale => document.documentElement.lang === locale && !document.querySelector("#language").disabled, expected);
+    }
+    for (const locale of locales) {
+      const messages = readCatalog(locale === "en-US" ? "en" : locale.replace("-", "_"));
+      await chooseLanguage(locale);
+      assert.equal(await page.title(), messages.gmailExtensionName.message);
+      assert.equal(await page.locator('label[for="language"]').innerText(), messages.pgLanguage.message);
+      assert.equal(await q("url").getAttribute("placeholder"), messages.pgChooseLink.message);
+      assert.equal(await q("show-links").getAttribute("aria-label"), messages.pgThreadLinks.message);
+    }
+    await page.reload();
+    await q("setup").waitFor();
+    assert.equal(await q("language").inputValue(), "zh-CN", "A reopened popup restores the stored override");
+    await page.evaluate(() => testState.setLanguage("fr"));
+    assert.equal(await q("language").inputValue(), "fr", "The active popup follows changes from other extension windows");
+    await chooseLanguage("auto", "es");
     const darkMode = page.getByRole("switch", { name: "Modo oscuro", exact: true });
     await page.getByRole("switch", { name: "Modo oscuro", checked: false, disabled: false }).waitFor();
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(255, 255, 255)");
@@ -232,6 +260,10 @@ async function run() {
     assert.equal(await q("panel-toggle").isChecked(), false);
     await q("preview-url").click();
     assert.equal(await q("exact-url").innerText(), sample);
+    await chooseLanguage("en-US");
+    assert.equal(await q("confirm-url").textContent(), english.vt_confirmUrl.message);
+    assert.equal(await q("exact-url").innerText(), sample);
+    await chooseLanguage("auto", "es");
     await q("cancel-url").click();
     assert.deepEqual(await page.evaluate(() => testState.lookups), [], "Selecting, hovering and cancelling stay local");
     await address.fill("https://tracking.example.test/tickets");
@@ -353,6 +385,13 @@ async function run() {
     await q("upload-confirmation").waitFor();
     assert.equal(await q("attachment-sha").innerText(), secondHash);
     assert.equal(await q("upload-file-name").innerText(), "document.pdf · 11 B");
+    await chooseLanguage("en-US");
+    assert.equal(await q("upload-heading").innerText(), english.pgUploadQuestion.message);
+    assert.equal(await q("result-title").innerText(), english.vt_noReport.message);
+    assert.equal(await q("attachments").inputValue(), "a2");
+    assert.equal(await q("attachments").locator("option").first().textContent(), english.pgChooseAttachment.message);
+    assert.deepEqual(await page.evaluate(() => [testState.uploads, testState.lookups]), [[], []]);
+    await chooseLanguage("auto", "es");
     assert.deepEqual(await page.evaluate(() => testState.reports), [{type: "pg:attachmentReport", hash: secondHash}]);
     assert.deepEqual(await page.evaluate(() => testState.reads),
       [{id: "a2", tab: 1, name: "pg:gmail:attachment", frameId: 0}]);
@@ -399,6 +438,9 @@ async function run() {
     await openWidget({state: enabled, attachments, attachment: handoff, report: "error"});
     await querySelectedAttachment(handoff.id);
     await q("status").filter({hasText: catalog.vt_error_network.message}).waitFor();
+    await chooseLanguage("en-US");
+    assert.equal(await q("status").innerText(), english.vt_error_network.message);
+    await chooseLanguage("auto", "es");
     assert.equal(await q("upload-confirmation").isVisible(), false, "A failed lookup cannot offer upload");
     await openWidget({state: enabled, attachments: [{...attachments[0], hold: true}, attachments[1]], attachment: handoff});
     await querySelectedAttachment(handoff.id);
@@ -473,7 +515,7 @@ async function run() {
 
     assert.deepEqual(errors, []);
     assert.deepEqual(outbound, [], "The popup never opens a selected or hovered email URL");
-    console.log("PASS settings, lookup handoffs, hash checks, upload consent, stale reads, local files and result scrolling");
+    console.log("PASS language selection and persistence, settings, lookup handoffs, hash checks, upload consent, stale reads, local files and result scrolling");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });

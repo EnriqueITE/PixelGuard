@@ -1,5 +1,5 @@
-/* global chrome, importScripts, PixelGuardVTInventory, PixelGuardVTWidget, PixelGuardVTAttachments, PixelGuardVault */
-importScripts('virustotal/inventory.js', 'virustotal/widget.js', 'virustotal/attachments.js', 'vault.js');
+/* global chrome, importScripts, PixelGuardI18n, PixelGuardVTInventory, PixelGuardVTWidget, PixelGuardVTAttachments, PixelGuardVault */
+importScripts('i18n-catalogs.js', 'i18n.js', 'virustotal/inventory.js', 'virustotal/widget.js', 'virustotal/attachments.js', 'vault.js');
 
 const VT_PERMISSION = { origins: ['https://www.virustotal.com/*'] };
 const storage = chrome.storage.local;
@@ -7,6 +7,7 @@ const vault = PixelGuardVault.create();
 // Only the popup and service worker need storage access. Gmail receives the
 // panel preferences over messaging, never storage events or the VT key.
 const ready = storage.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+const languageReady = ready.then(() => storage.get('language')).then(({language}) => setLanguage(language)).catch(() => {});
 // Migrate on worker startup, even if the user never opens the popup again.
 // A transient storage failure is retried on the next config operation.
 ready.then(() => withConfig(() => {})).catch(() => {});
@@ -36,8 +37,14 @@ function withConfig(operation) {
 }
 
 async function panelPreferences() {
-  const { showPanel, theme } = await storage.get(['showPanel', 'theme']);
-  return {showPanel: showPanel !== false, theme: theme === 'dark' ? 'dark' : 'light'};
+  const { showPanel, theme, language } = await storage.get(['showPanel', 'theme', 'language']);
+  return {showPanel: showPanel !== false, theme: theme === 'dark' ? 'dark' : 'light',
+    language: PixelGuardI18n.validPreference(language) ? language : 'auto'};
+}
+
+function setLanguage(language) {
+  PixelGuardI18n.use(language);
+  return chrome.action.setTitle({title: PixelGuardI18n.t('gmailExtensionName')});
 }
 
 async function state() {
@@ -49,11 +56,11 @@ async function state() {
   });
 }
 
-async function notifyPanels({showPanel, theme}) {
+async function notifyPanels({showPanel, theme, language}) {
   // Tab IDs are available without the broad tabs permission. Only our Gmail
   // content scripts receive this message; other tabs have no listener.
   const tabs = await chrome.tabs.query({});
-  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel, theme })));
+  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel, theme, language })));
 }
 
 async function settings(msg) {
@@ -67,7 +74,11 @@ async function settings(msg) {
       if (msg.theme !== 'light' && msg.theme !== 'dark') return fail('unavailable');
       update.theme = msg.theme;
     }
-    const panelChanged = 'showPanel' in update || 'theme' in update;
+    if ('language' in msg) {
+      if (!PixelGuardI18n.validPreference(msg.language)) return fail('unavailable');
+      update.language = msg.language;
+    }
+    const panelChanged = Object.keys(update).length > 0;
     if ('vtEnabled' in msg || 'apiKey' in msg) {
       if (('apiKey' in msg && typeof msg.apiKey !== 'string') ||
           ('vtEnabled' in msg && typeof msg.vtEnabled !== 'boolean')) return fail('unavailable');
@@ -93,6 +104,10 @@ async function settings(msg) {
       if (error) return error;
     } else if (panelChanged) {
       await storage.set(update);
+    }
+    if ('language' in update) {
+      await languageReady;
+      await setLanguage(update.language);
     }
     const updated = await state();
     if (panelChanged) await notifyPanels(updated);
@@ -222,16 +237,17 @@ async function attachmentAction(msg, sender) {
 async function updateBadge(tabId, { suspicious, externals, links, scanning = false }) {
   const counts = [suspicious, externals, links];
   if (typeof scanning !== 'boolean' || !counts.every(count => Number.isSafeInteger(count) && count >= 0)) return fail('unavailable');
+  await languageReady;
   let text = '';
-  let title = chrome.runtime.getManifest().name;
+  let title = PixelGuardI18n.t('gmailExtensionName');
   let color;
   if (scanning) {
     text = '…';
-    title = chrome.i18n.getMessage('gmailFullScanRunning');
+    title = PixelGuardI18n.t('gmailFullScanRunning');
     color = '#49616a';
   } else if (counts.some(count => count > 0)) {
     text = counts.map(count => count > 9 ? '+' : String(count)).join('');
-    title = chrome.i18n.getMessage('badgeFindingsTitle', counts.map(String));
+    title = PixelGuardI18n.t('badgeFindingsTitle', ...counts);
     color = suspicious > 0 ? '#e53935' : links > 0 ? '#ff9800' : '#00bfa5';
   }
   // Issue the tab-scoped updates together, in delivery order, even when the

@@ -1,4 +1,4 @@
-/* global chrome, PixelGuardVTInventory */
+/* global PixelGuardVTInventory */
 // The editable field owns the lookup value. Suggestions and their previews stay local.
 function initUrlPicker(onChange) {
   const picker = document.getElementById("url-picker");
@@ -7,9 +7,6 @@ function initUrlPicker(onChange) {
   const list = document.getElementById("url-options");
   const toggle = document.getElementById("show-links");
   let active;
-
-  input.placeholder = chrome.i18n.getMessage("pgChooseLink");
-  toggle.setAttribute("aria-label", chrome.i18n.getMessage("pgThreadLinks"));
 
   function setActive(option) {
     active?.setAttribute("aria-selected", "false");
