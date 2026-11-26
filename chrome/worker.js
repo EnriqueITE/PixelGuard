@@ -36,9 +36,9 @@ function withConfig(operation) {
   });
 }
 
-async function panelPreferences() {
+async function panelPreferences(vtEnabled) {
   const { showPanel, theme, language } = await storage.get(['showPanel', 'theme', 'language']);
-  return {showPanel: showPanel !== false, theme: theme === 'dark' ? 'dark' : 'light',
+  return {vtEnabled, showPanel: showPanel !== false, theme: theme === 'dark' ? 'dark' : 'light',
     language: PixelGuardI18n.validPreference(language) ? language : 'auto'};
 }
 
@@ -47,20 +47,21 @@ function setLanguage(language) {
   return chrome.action.setTitle({title: PixelGuardI18n.t('gmailExtensionName')});
 }
 
-async function state() {
-  return withConfig(async config => {
-    const panel = await panelPreferences();
-    const hasKey = !!config.sealedKey;
-    const vtEnabled = hasKey && config.enabled === true && await chrome.permissions.contains(VT_PERMISSION);
-    return { ok: true, ...panel, hasKey, vtEnabled };
-  });
+async function virusTotalEnabled(config) {
+  return !!config.sealedKey && config.enabled === true && await chrome.permissions.contains(VT_PERMISSION);
 }
 
-async function notifyPanels({showPanel, theme, language}) {
+async function state() {
+  return withConfig(async config => ({
+    ok: true, ...await panelPreferences(await virusTotalEnabled(config)), hasKey: !!config.sealedKey
+  }));
+}
+
+async function notifyPanels({showPanel, theme, language, vtEnabled}) {
   // Tab IDs are available without the broad tabs permission. Only our Gmail
   // content scripts receive this message; other tabs have no listener.
   const tabs = await chrome.tabs.query({});
-  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel, theme, language })));
+  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'pg:panelChanged', showPanel, theme, language, vtEnabled })));
 }
 
 async function settings(msg) {
@@ -79,7 +80,8 @@ async function settings(msg) {
       update.language = msg.language;
     }
     const panelChanged = Object.keys(update).length > 0;
-    if ('vtEnabled' in msg || 'apiKey' in msg) {
+    const vtChanged = 'vtEnabled' in msg || 'apiKey' in msg;
+    if (vtChanged) {
       if (('apiKey' in msg && typeof msg.apiKey !== 'string') ||
           ('vtEnabled' in msg && typeof msg.vtEnabled !== 'boolean')) return fail('unavailable');
       const apiKey = msg.apiKey?.trim();
@@ -110,7 +112,7 @@ async function settings(msg) {
       await setLanguage(update.language);
     }
     const updated = await state();
-    if (panelChanged) await notifyPanels(updated);
+    if (panelChanged || vtChanged) await notifyPanels(updated);
     return updated;
   });
 }
@@ -347,7 +349,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       return attachmentAction(msg, sender);
     }
     await writes;
-    if (msg.type === 'pg:panel') return { ok: true, ...await panelPreferences() };
+    if (msg.type === 'pg:panel') {
+      const enabled = await withConfig(virusTotalEnabled).catch(() => false);
+      return { ok: true, ...await panelPreferences(enabled) };
+    }
     return state();
   }).then(reply, () => reply(fail('storage')));
   return true;
@@ -362,6 +367,7 @@ chrome.permissions.onRemoved.addListener(removed => {
       await chrome.storage.session.remove('vtUploadGrants');
       if (config.enabled) await storage.set({ vtConfig: { ...config, enabled: false } });
     });
+    await notifyPanels(await panelPreferences(false));
   }).catch(() => {});
 });
 

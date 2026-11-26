@@ -1,8 +1,12 @@
 # Privacidad de PixelGuard para Gmail
 
+PixelGuard utiliza los datos de Gmail para detectar indicios de seguimiento en los mensajes que abres y para realizar las consultas de seguridad que solicitas. El uso de esos datos cumple los requisitos de [uso limitado de Chrome Web Store](https://developer.chrome.com/docs/webstore/program-policies/limited-use). Para consultas de privacidad, escribe a hello@enriqueite.com.
+
 ## Al abrir un correo
 
 PixelGuard lee el mensaje que expandes en Gmail y pide su original a `mail.google.com` con la sesión de esa cuenta. En tu navegador examina las direcciones de las imágenes y los enlaces como texto. Puedes mantener las imágenes bloqueadas. Este análisis no abre los enlaces, no carga los píxeles del remitente y no envía el correo a VirusTotal ni a un servidor de PixelGuard.
+
+Para pedir el original, PixelGuard utiliza el identificador del mensaje y la cuenta de Gmail en la que lo has abierto. Si Gmail muestra la dirección del remitente, PixelGuard utiliza su dominio como una de las señales del análisis local.
 
 Si PixelGuard no puede examinar todo el mensaje, muestra **Análisis parcial**. Ocultar la barra cambia dónde ves los resultados. El análisis sigue activo y puedes consultar el contador en el escudo.
 

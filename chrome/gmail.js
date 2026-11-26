@@ -18,6 +18,7 @@
   let activeOriginalReads = 0;
   const pageSize = 3;
   let showPanel = false;
+  let vtEnabled = false;
   let theme = "light";
   const attachments = PixelGuardGmailAttachments.create(openVirusTotal, contextActive);
   const t = PixelGuardI18n.t;
@@ -208,7 +209,7 @@
 
   async function openVirusTotal(event, payload, panel) {
     const control = event.currentTarget;
-    if (!event.isTrusted || !contextActive() || !control.isConnected) return;
+    if (!vtEnabled || !event.isTrusted || !contextActive() || !control.isConnected) return;
     if (control.nextElementSibling?.matches(".pg-vt-notice")) control.nextElementSibling.remove();
     clearVtSelection();
     const selection = {payload, panel, page: location.href};
@@ -272,7 +273,7 @@
       const detail = element("div", "pg-row-foot");
       const actions = element("div", "pg-row-actions");
       actions.append(copy);
-      const target = PixelGuardVTInventory.validUrl(item.url);
+      const target = vtEnabled && PixelGuardVTInventory.validUrl(item.url);
       if (target) {
         const vt = button("VirusTotal");
         vt.title = t("gmailVtOpen");
@@ -515,7 +516,7 @@
       return;
     }
     const visible = new Set(visibleBodies());
-    attachments.refresh(theme);
+    attachments.refresh(theme, vtEnabled);
     let suspicious = 0, externals = 0, links = 0;
     let tabScanning = false;
     for (const body of visible) {
@@ -652,7 +653,12 @@
   window.addEventListener("hashchange", () => { clearMessageSelection(); scheduleRefresh(); }, listenerOptions);
   window.addEventListener("pagehide", clearMessageSelection, listenerOptions);
   window.addEventListener("pageshow", event => {
-    if (event.persisted) { lastCounts = ""; scheduleRefresh(); }
+    if (event.persisted) {
+      lastCounts = "";
+      receivedPreference = false;
+      loadPreference();
+      scheduleRefresh();
+    }
   }, listenerOptions);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) scheduleRefresh();
@@ -671,11 +677,15 @@
     PixelGuardI18n.use(preferences.language);
     if (PixelGuardI18n.locale !== oldLocale) lastCounts = "";
     showPanel = preferences.showPanel === true;
+    const vtChanged = vtEnabled !== (preferences.vtEnabled === true);
+    vtEnabled = preferences.vtEnabled === true;
+    if (vtChanged && !vtEnabled) clearVtSelection();
     theme = preferences.theme === "dark" ? "dark" : "light";
-    for (const entry of messages.values()) {
-      if (entry.view) entry.view.panel.dataset.theme = theme;
+    for (const entry of [...messages.values(), originalPageRecord]) {
+      if (!entry?.view) continue;
+      entry.view.panel.dataset.theme = theme;
+      if (vtChanged && entry.view.entries.length) drawPage(entry.view);
     }
-    if (originalPageRecord?.view) originalPageRecord.view.panel.dataset.theme = theme;
     refresh();
   }
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -686,7 +696,7 @@
       reply(linkInventory());
     } else if (message.type === "pg:gmail:attachments") {
       if (sender.url?.split("#")[0] !== popupUrl) return;
-      attachments.refresh(theme);
+      attachments.refresh(theme, vtEnabled);
       reply({attachments: attachments.list()});
     } else if (message.type === "pg:gmail:takeVtSelection") {
       if (sender.url?.split("#")[0] !== popupUrl) return;

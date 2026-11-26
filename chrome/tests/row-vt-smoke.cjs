@@ -57,10 +57,6 @@ async function main() {
     const reader = await ctx.newPage();
     await reader.goto(new URL('popup.html', worker.url()).href);
     await reader.locator('#panel-toggle:enabled').waitFor();
-    await reader.evaluate(async () => {
-      const saved = await chrome.runtime.sendMessage({type: 'pg:settings', apiKey: 'row-test-placeholder', vtEnabled: true});
-      if (!saved?.vtEnabled) throw Error('Failed to enable the local VT stub');
-    });
     await mail.bringToFront();
     await mail.evaluate(() => { location.hash = 'inbox/next-thread'; });
     await mail.waitForURL(gmail + '#inbox/next-thread');
@@ -70,6 +66,15 @@ async function main() {
     const imageRow = mail.locator('#full li[data-category="tracking-pixel"]');
     const linkRow = mail.locator('#full li[data-category="tracking-link"]');
     const rowButton = row => row.getByRole('button', {name: 'VirusTotal', exact: true});
+    for (const row of [imageRow, linkRow]) {
+      assert.ok(await row.getByRole('button', {name: 'Copy URL'}).isVisible());
+      assert.equal(await rowButton(row).isVisible(), false, 'VirusTotal starts hidden on open mail');
+    }
+    await reader.evaluate(async () => {
+      const saved = await chrome.runtime.sendMessage({type: 'pg:settings', apiKey: 'row-test-placeholder', vtEnabled: true});
+      if (!saved?.vtEnabled) throw Error('Failed to enable the local VT stub');
+    });
+    await rowButton(linkRow).waitFor();
     assert.equal(await imageRow.locator('.pg-url').innerText(), pixel);
     assert.equal(await linkRow.locator('.pg-url').innerText(), link);
     for (const row of [imageRow, linkRow]) {
@@ -121,6 +126,12 @@ async function main() {
     await popup.locator('#preview-url').click();
     await popup.locator('#confirm-url').click();
     await popup.locator('#result-title').filter({hasText: '0 / 20'}).waitFor();
+    assert.deepEqual(await queries(), ['click.example.test', pixel]);
+    await popup.locator('#vt-toggle').uncheck();
+    for (const row of [imageRow, linkRow]) {
+      await rowButton(row).waitFor({state: 'hidden'});
+      assert.ok(await row.getByRole('button', {name: 'Copy URL'}).isVisible());
+    }
     assert.deepEqual(await queries(), ['click.example.test', pixel]);
     assert.deepEqual(external, [], 'No sender or image URL was requested');
     console.log('PASS Gmail row to', firstPopup, 'and compatibility window, exact selection, manual domain and confirmed URL', ctx.browser().version());

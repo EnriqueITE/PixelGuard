@@ -14,7 +14,7 @@ LOCALES = {"en-US": "en", "de": "de", "el": "el", "es": "es", "fr": "fr",
 def build():
     files = {name: SOURCE / name for name in (
         "manifest.json", "PRIVACY.md", "gmail.js", "gmail.css", "scanner.js", "worker.js", "vault.js", "i18n.js",
-        "popup.html", "popup.css", "popup-url.js", "popup-attachments.js", "popup.js",
+        "popup.html", "popup.css", "popup-url.js", "popup-attachments.js", "popup.js", "assets/icon-128.png",
         "virustotal/inventory.js", "virustotal/widget.js", "virustotal/attachments.js",
         "original-mime.js", "original-scan.js", "gmail-original.js", "gmail-attachments.js"
     )}

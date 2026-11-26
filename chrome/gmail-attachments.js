@@ -82,7 +82,7 @@
         metadata.messageId === record.messageId && metadata.partId === record.partId;
     }
     function publicItem({id, name}) { return {id, name}; }
-    function refresh(theme) {
+    function refresh(theme, showActions) {
       const keep = new Set();
       for (const card of document.querySelectorAll('.aZo')) {
         const data = describe(card);
@@ -104,6 +104,11 @@
             if (event.isTrusted && current(record)) open(event, {attachment: publicItem(record)}, card);
           });
         }
+        keep.add(card);
+        if (!showActions) {
+          record.button.remove();
+          continue;
+        }
         if (record.button.dataset.theme !== theme) record.button.dataset.theme = theme;
         if (card.matches('a, button, [role="button"], [role="link"]')) {
           if (card.nextElementSibling !== record.button) card.after(record.button);
@@ -111,7 +116,6 @@
           // Keep our action outside the preview link but in the same wrapping card.
           card.append(record.button);
         }
-        keep.add(card);
       }
       for (const [card, record] of records) {
         if (!keep.has(card)) { record.button.remove(); records.delete(card); }

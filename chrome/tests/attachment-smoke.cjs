@@ -102,14 +102,24 @@ async function main() {
     const config = await ctx.newPage();
     await config.goto(new URL('popup.html', worker.url()).href);
     await config.locator('#panel-toggle:enabled').waitFor();
+    await mail.bringToFront();
+    await mail.evaluate(() => { location.hash = 'inbox/thread'; });
+    await mail.locator('.pixelguard-gmail').waitFor();
+    const buttons = mail.locator('.aQH button').filter({hasText: 'VirusTotal'});
+    assert.equal(await buttons.first().isVisible(), false);
     const enabled = await config.evaluate(() => chrome.runtime.sendMessage({
       type: 'pg:settings', apiKey: 'attachment-fixture-only', vtEnabled: true
     }));
     assert.equal(enabled.vtEnabled, true);
-    await mail.bringToFront();
-    await mail.evaluate(() => { location.hash = 'inbox/thread'; });
-    const buttons = mail.locator('.aQH button').filter({hasText: 'VirusTotal'});
     await buttons.nth(1).waitFor();
+    for (const vtEnabled of [false, true]) {
+      const reply = await config.evaluate(value => chrome.runtime.sendMessage({
+        type: 'pg:settings', vtEnabled: value
+      }), vtEnabled);
+      assert.equal(reply.vtEnabled, vtEnabled);
+      if (vtEnabled) await buttons.nth(1).waitFor();
+      else await buttons.first().waitFor({state: 'hidden'});
+    }
     assert.equal(await buttons.count(), 2);
     assert.equal(await mail.locator('#sender-content button').count(), 0);
     const [knownId, unknownId] = await config.evaluate(async () => {

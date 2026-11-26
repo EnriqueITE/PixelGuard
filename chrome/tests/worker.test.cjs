@@ -112,15 +112,41 @@ function harness(shared = { data: {} }) {
 
 test('the Gmail page only receives display preferences, including when settings change', async () => {
   const h = harness();
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true, theme: 'light', language: 'auto' });
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: true, theme: 'light', language: 'auto', vtEnabled: false });
   for (const type of ['pg:settings', 'pg:lookup', 'pg:state']) {
     assert.equal((await h.send(type, { apiKey: sample }, h.gmail)).error, 'unauthorized');
   }
   await h.send('pg:settings', { showPanel: false, apiKey: sample });
-  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false, theme: 'light', language: 'auto' });
-  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light', language: 'auto' })));
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail), { ok: true, showPanel: false, theme: 'light', language: 'auto', vtEnabled: false });
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light', language: 'auto', vtEnabled: false })));
   assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false, theme: 'light', language: 'auto' });
   assert.equal(h.requests.length, 0);
+});
+
+test('Gmail learns only whether row actions are available after toggling, forgetting the key or revoking permission', async () => {
+  const h = harness();
+  const panel = {showPanel: true, theme: 'light', language: 'auto'};
+  async function check(vtEnabled) {
+    assert.deepEqual(await h.send('pg:panel', {}, h.gmail), {ok: true, ...panel, vtEnabled});
+    assert.deepEqual(h.broadcasts.splice(0), [1, 2].map(() => ({type: 'pg:panelChanged', ...panel, vtEnabled})));
+  }
+  await h.send('pg:settings', {apiKey: sample});
+  await check(false);
+  h.grant();
+  await h.send('pg:settings', {vtEnabled: true});
+  await check(true);
+  await h.send('pg:settings', {vtEnabled: false});
+  await check(false);
+  await h.send('pg:settings', {vtEnabled: true});
+  await check(true);
+  h.revoke();
+  await check(false);
+  h.grant();
+  await h.send('pg:settings', {vtEnabled: true});
+  await check(true);
+  await h.send('pg:settings', {apiKey: ''});
+  await check(false);
+  assert.deepEqual(h.requests, []);
 });
 
 const sampleFile = new Blob(['Adjunto de prueba\n']);
@@ -263,9 +289,9 @@ test('changing theme preserves other preferences and remains local across worker
   assert.equal((await h.send('pg:settings', { theme: 'system', showPanel: true })).ok, false);
   assert.deepEqual(h.broadcasts, []);
   assert.equal((await h.send('pg:settings', { theme: 'dark' })).theme, 'dark');
-  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'dark', language: 'auto' })));
+  assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'dark', language: 'auto', vtEnabled: false })));
   const reopened = harness(shared);
-  assert.deepEqual(await reopened.send('pg:panel', {}, reopened.gmail), {ok: true, showPanel: false, theme: 'dark', language: 'auto'});
+  assert.deepEqual(await reopened.send('pg:panel', {}, reopened.gmail), {ok: true, showPanel: false, theme: 'dark', language: 'auto', vtEnabled: false});
   assert.equal((await reopened.send('pg:settings', {showPanel: true})).theme, 'dark');
   assert.equal((await reopened.send('pg:settings', {theme: 'light'})).showPanel, true);
   assert.deepEqual(reopened.requests, []);
@@ -529,10 +555,12 @@ test('two workers serialize new-key saves and keep the wrapping key across resta
 });
 
 test('migration preserves the original record on failure and replaces it atomically on retry', async () => {
-  const shared = { failSave: true, data: { vtConfig: { apiKey: sample, enabled: true } } };
+  const shared = { failSave: true, data: { theme: 'dark', vtConfig: { apiKey: sample, enabled: true } } };
   const h = harness(shared);
   h.grant();
   assert.equal((await h.send('pg:state')).error, 'storage');
+  assert.deepEqual(await h.send('pg:panel', {}, h.gmail),
+    {ok: true, vtEnabled: false, showPanel: true, theme: 'dark', language: 'auto'});
   assert.ok(shared.data.vtConfig.apiKey === sample);
   assert.equal(shared.data.vtConfig.sealedKey, undefined);
   shared.failSave = false;

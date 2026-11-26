@@ -4,7 +4,7 @@ Prototipo de PixelGuard para Gmail en Chrome y Brave de escritorio. Su código, 
 
 Al expandir un mensaje en Gmail, PixelGuard añade un resumen encima del cuerpo. Despliega el resumen para ver el texto del enlace, su dirección completa y el motivo de la detección. Puedes copiar cada URL y recorrer los resultados de tres en tres.
 
-PixelGuard usa el idioma del navegador de forma predeterminada. En los ajustes del popup, **Idioma** permite elegir inglés de Estados Unidos, alemán, griego, español, francés, italiano, ruso o chino simplificado. El cambio se aplica también a los mensajes abiertos y al widget de VirusTotal. Elige **Idioma del navegador** para volver al modo automático. Si el idioma del navegador no está disponible, PixelGuard usa inglés.
+PixelGuard usa el idioma del navegador de forma predeterminada. En los ajustes del popup, **Idioma** permite elegir inglés, alemán, griego, español, francés, italiano, ruso o chino simplificado. El cambio se aplica también a los mensajes abiertos y al widget de VirusTotal. Elige **Idioma del navegador** para volver al modo automático. Si el idioma del navegador no está disponible, PixelGuard usa inglés.
 
 ## Cargar en Chrome
 
@@ -32,7 +32,7 @@ El detector se activa en `https://mail.google.com/mail/*`. El análisis del mens
 
 Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y activar **Modo oscuro**. El tema claro es el predeterminado. El interruptor cambia al instante el aspecto de los ajustes y del panel de los correos abiertos. La elección se guarda en el navegador.
 
-En cada hallazgo con una dirección web compatible, pulsa **VirusTotal**, junto a **Copiar URL**, para abrir el widget con esa dirección seleccionada. Funciona también con la dirección de un píxel o de una imagen que PixelGuard ha encontrado en el original. Puedes cambiar la selección, elegir **Consultar dominio** o pulsar **Revisar URL completa**. La consulta de la URL se envía cuando la confirmas.
+Al activar VirusTotal, aparece el botón **VirusTotal** junto a **Copiar URL** en cada hallazgo con una dirección web compatible. Púlsalo para abrir el widget con esa dirección seleccionada. Funciona también con la dirección de un píxel o de una imagen que PixelGuard ha encontrado en el original. Puedes cambiar la selección, elegir **Consultar dominio** o pulsar **Revisar URL completa**. La consulta de la URL se envía cuando la confirmas.
 
 En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
 

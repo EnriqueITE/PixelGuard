@@ -1,7 +1,7 @@
 /* global chrome, PixelGuardCatalogs */
 (() => {
   const languages = Object.freeze({
-    "en-US": "English (US)", de: "Deutsch", el: "Ελληνικά", es: "Español",
+    "en-US": "English", de: "Deutsch", el: "Ελληνικά", es: "Español",
     fr: "Français", it: "Italiano", ru: "Русский", "zh-CN": "中文（简体）"
   });
   let locale, plurals;

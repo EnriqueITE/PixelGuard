@@ -11,7 +11,7 @@
   "host_permissions": ["https://mail.google.com/*"],
   "optional_host_permissions": ["https://www.virustotal.com/*"],
   "background": { "service_worker": "worker.js" },
-  "icons": { "48": "assets/icon-48.png", "96": "assets/icon-96.png" },
+  "icons": { "48": "assets/icon-48.png", "96": "assets/icon-96.png", "128": "assets/icon-128.png" },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
