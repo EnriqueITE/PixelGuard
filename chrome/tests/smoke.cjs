@@ -68,8 +68,9 @@ async function main() {
     };
     async function checkSummary(id, summary, color) {
       await page.waitForFunction(({id, summary}) =>
-        document.querySelector("#" + id + " summary .pg-status")?.textContent === summary, {id, summary});
-      const accent = await panel(id).locator("summary").evaluate(el => getComputedStyle(el).borderInlineStartColor);
+        [...document.querySelectorAll("#" + id + " .pg-summary")].some(header =>
+          header.getClientRects().length && header.querySelector(".pg-status")?.textContent === summary), {id, summary});
+      const accent = await panel(id).locator(".pg-summary:visible").evaluate(el => getComputedStyle(el).borderInlineStartColor);
       assert.equal(accent, color);
     }
     async function check(id, summary, reason, category) {
@@ -320,6 +321,38 @@ async function main() {
     assert.equal(await hidden.locator(".pg-url,button").count(), 0);
     await page.locator("#link .a3s").evaluate(body => body.replaceChildren(document.createTextNode("Hello")));
     await checkSummary("link", "No tracking indicators found", "rgb(214, 226, 226)");
+    const header = shop.locator(".pg-summary:visible");
+    assert.equal(await shop.locator("summary:visible, .pg-chevron:visible").count(), 0);
+    await header.click();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    assert.equal(await shop.getAttribute("open"), null, "An empty bar cannot expand");
+    assert.equal(await shop.getByRole("combobox").count(), 0, "The previous filter disappears with the last finding");
+    await shop.evaluate(node => {
+      const before = document.createElement("button");
+      const after = document.createElement("button");
+      after.id = "after-clean-bar";
+      node.before(before);
+      node.after(after);
+      before.focus();
+    });
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "after-clean-bar", "Tab skips the empty bar");
+
+    await page.locator("#link .a3s").evaluate(body => {
+      const img = new Image(180, 48);
+      img.src = "https://cdn.example.test/logo.png";
+      body.append(img);
+    });
+    await checkSummary("link", logoSummary, colorFor["external-image"]);
+    assert.equal(await shop.getAttribute("open"), null, "New findings start collapsed");
+    await shop.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await shop.locator('li[data-category="external-image"]').waitFor();
+    await page.locator("#link .a3s img").evaluate(img => img.remove());
+    await checkSummary("link", "No tracking indicators found", "rgb(214, 226, 226)");
+    assert.equal(await shop.locator("summary:visible, .pg-chevron:visible").count(), 0);
+    assert.equal(await shop.getAttribute("open"), null, "The open list closes when Gmail removes its last row");
     await page.goto("https://example.test/");
     assert.equal(await page.locator(".pixelguard-gmail").count(), 0);
     await checkBadge(probe, tabId, "");

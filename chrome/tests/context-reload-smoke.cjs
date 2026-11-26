@@ -46,7 +46,7 @@ async function main() {
     await Promise.all([
       pending,
       page.waitForSelector("#ready li[data-category='tracking-link']", {state: "attached"}),
-      page.waitForSelector("#pending details[data-scanning]")
+      page.waitForSelector("#pending .pixelguard-gmail[data-scanning]")
     ]);
     await page.evaluate(() => {
       window.oldPanel = document.querySelector("#ready details");

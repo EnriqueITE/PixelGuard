@@ -133,7 +133,7 @@ async function main() {
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
     const tabId = await worker.evaluate(async () => (await chrome.tabs.query({active: true, lastFocusedWindow: true}))[0].id);
     const panel = page.locator('.pixelguard-gmail');
-    const summary = panel.locator('summary');
+    const summary = panel.locator('.pg-summary');
     const popup = await ctx.newPage();
     await popup.goto(new URL('popup.html', worker.url()).href);
     const toggle = popup.locator('#panel-toggle');
@@ -179,7 +179,7 @@ async function main() {
     assert.equal(new URL(page.url()).search, '');
 
     // Hold the original so the visible message contains genuine preliminary
-    // findings while we inspect the collapsed and expanded scanning states.
+    // findings while we inspect the non-interactive scanning state.
     const delayedRequest = nextRoute(delayedId);
     await page.locator('.adn').evaluate((el, {id, html}) => {
       el.setAttribute('data-legacy-message-id', id);
@@ -192,6 +192,8 @@ async function main() {
     const sweep = () => summary.evaluate(el => getComputedStyle(el, '::after').animationName);
     await running.waitFor();
     assert.equal(await panel.getAttribute('open'), null);
+    assert.equal(await summary.evaluate(el => el.matches('summary, [role="button"]')), false);
+    assert.equal(await summary.locator('.pg-chevron:visible').count(), 0);
     assert.notEqual(await panel.getAttribute('data-scanning'), null);
     assert.equal(await results.getAttribute('aria-busy'), 'true');
     assert.doesNotMatch(await summary.innerText(), /tracking indicators|partial scan|no tracking/i);
@@ -201,8 +203,9 @@ async function main() {
     assert.equal(await sweep(), 'none');
     assert.equal(await running.isVisible(), true);
     await summary.click();
+    assert.equal(await panel.getAttribute('open'), null, 'A click does not expand the scanning bar');
     assert.equal(await panel.locator('.pg-list li:visible, .pg-filter:visible, .pg-pager:visible').count(), 0,
-      'Opening the panel during scanning must not reveal provisional results');
+      'The scanning bar must not reveal provisional results');
     await page.emulateMedia({reducedMotion: 'no-preference'});
 
     // Gmail can reuse the same DOM for a different message during a request.
@@ -342,6 +345,18 @@ async function main() {
     await panel.locator('summary').click();
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
     await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    for (const [type, body, expected] of [
+      ['text/html', '<p>A clean message</p>', 'No tracking indicators found'],
+      ['text/plain', 'A plain message', 'Plain-text original']
+    ]) {
+      await page.locator('pre.raw_message_text').evaluate((node, source) => { node.textContent = source; },
+        'Content-Type: ' + type + '; charset=UTF-8\r\n\r\n' + body);
+      await summary.getByText(expected, {exact: true}).waitFor();
+      assert.equal(await summary.evaluate(el => el.matches('summary, [role="button"]')), false);
+      assert.equal(await panel.locator('.pg-chevron:visible, .pg-results:visible').count(), 0);
+      await summary.click();
+      assert.equal(await panel.getAttribute('open'), null);
+    }
     await page.waitForLoadState('networkidle');
     assert.equal(sourceRequests.length, requestCount);
     assert.deepEqual(external, [], 'The context must never request a sender, image or embedded resource URL');

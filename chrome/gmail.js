@@ -70,9 +70,9 @@
   }
 
   function createPanel(onFullScan) {
-    const panel = element("details", "pixelguard-gmail");
+    const panel = element("div", "pixelguard-gmail");
     panel.dataset.theme = theme;
-    const summary = element("summary");
+    const summary = element("div", "pg-summary");
     const logo = element("img");
     logo.alt = "";
     logo.src = iconUrl;
@@ -113,6 +113,7 @@
     footer.append(range, prev, next);
     tools.append(filter, originalBar);
     const results = element("div", "pg-results");
+    results.hidden = true;
     results.append(tools, list, empty, footer);
     panel.append(summary, results);
     const state = {panel, summary, status, results, originalBar, originalButton, originalStatus, filter, list, empty, footer, prev, next, range, entries: [], page: 0};
@@ -120,6 +121,18 @@
     prev.addEventListener("click", () => { state.page--; drawPage(state); });
     next.addEventListener("click", () => { state.page++; drawPage(state); });
     return state;
+  }
+
+  function setExpandable(state, expandable) {
+    if (state.panel.matches("details") === expandable) return;
+    const panel = element(expandable ? "details" : "div", "pixelguard-gmail");
+    panel.dataset.theme = theme;
+    const summary = element(expandable ? "summary" : "div", "pg-summary");
+    summary.append(...state.summary.childNodes);
+    panel.append(summary, state.results);
+    state.panel.replaceWith(panel);
+    state.panel = panel;
+    state.summary = summary;
   }
 
   function anchorLabel(anchor) {
@@ -234,6 +247,12 @@
     const unavailable = originalLabels ? [] : [...body.querySelectorAll("img")].filter(img =>
       !sources.some(attr => img.getAttribute(attr)?.trim()));
     const missing = unavailable.length;
+    const hasEntries = items.length + missing > 0;
+    setExpandable(state, hasEntries);
+    state.results.hidden = !hasEntries;
+    if (!hasEntries) state.filter.value = "all";
+    if (state.expandAfterRetry && hasEntries) state.panel.open = true;
+    state.expandAfterRetry = false;
     state.missing = missing;
     counts.set("unavailable-image", missing);
     const totals = [];
@@ -254,7 +273,7 @@
       option.disabled = count === 0 && option.value !== "all" && !option.selected;
       option.hidden = option.value === "unavailable-image" && !missing && !option.selected;
     }
-    state.filter.hidden = !items.length && !missing && state.filter.value === "all";
+    state.filter.hidden = !hasEntries;
     const labels = originalLabels || new Map();
     if (!originalLabels) {
       for (const a of body.querySelectorAll("a[href]")) {
@@ -336,13 +355,14 @@
     else if (entry.failed) text = t("gmailOriginalFailed");
     originalBar.hidden = !text;
     if (originalStatus.textContent !== text) originalStatus.textContent = text;
+    if (text && !entry.view.panel.hasAttribute("data-scanning")) entry.view.results.hidden = false;
   }
 
   function requestFullScan(body, entry) {
     if (!contextActive() || !entry.failed || entry.request || entry.retryState === "pending" || messages.get(body) !== entry ||
         !body.isConnected || PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
     entry.retryState = "pending";
-    entry.view.panel.open = true;
+    entry.view.expandAfterRetry = true;
     refresh();
   }
 
@@ -457,16 +477,17 @@
         if (entry.view.panel.parentElement !== body.parentElement) body.before(entry.view.panel);
         const view = entry.view;
         if (updated || mount || scanning !== view.panel.hasAttribute("data-scanning")) {
-          view.panel.toggleAttribute("data-scanning", scanning);
-          view.results.hidden = scanning;
           view.results.setAttribute("aria-busy", String(scanning));
           if (scanning) {
+            setExpandable(view, false);
+            view.results.hidden = true;
             view.summary.removeAttribute("data-category");
             const label = t("gmailFullScanRunning");
             if (view.status.textContent !== label) view.status.textContent = label;
           } else {
             render(view, body, result, entry.original?.labels, entry.failed);
           }
+          view.panel.toggleAttribute("data-scanning", scanning);
           originalControls(entry);
         }
       } else if (entry.view) {
@@ -551,8 +572,8 @@
     if (!document.hidden) scheduleRefresh();
   }, listenerOptions);
   // An extension reload invalidates the old script, but the page keeps its DOM.
-  for (const panel of document.querySelectorAll("details.pixelguard-gmail")) {
-    if (panel.querySelector("summary > img")?.getAttribute("src") === iconUrl) panel.remove();
+  for (const panel of document.querySelectorAll(".pixelguard-gmail")) {
+    if (panel.querySelector(":scope > :is(summary, .pg-summary) > img")?.getAttribute("src") === iconUrl) panel.remove();
   }
   for (const control of document.querySelectorAll(".pixelguard-attachment-action")) {
     if (!control.closest(".a3s")) control.remove();

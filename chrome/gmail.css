@@ -44,7 +44,7 @@
   --pg-sweep: #76ddbb;
 }
 .pixelguard-gmail *, .pixelguard-gmail *::after { box-sizing: border-box; }
-.pixelguard-gmail > summary {
+.pixelguard-gmail > .pg-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -54,16 +54,17 @@
   border-inline-start: 3px solid var(--pg-category, var(--pg-line));
   border-radius: inherit;
   list-style: none;
-  cursor: pointer;
   background: var(--pg-summary);
 }
+.pixelguard-gmail > summary { cursor: pointer; }
+.pixelguard-gmail > div.pg-summary .pg-chevron { display: none; }
 .pixelguard-gmail > summary::-webkit-details-marker { display: none; }
-.pixelguard-gmail[data-scanning] > summary {
+.pixelguard-gmail[data-scanning] > .pg-summary {
   position: relative;
   overflow: hidden;
   border-inline-start-color: var(--pg-line);
 }
-.pixelguard-gmail[data-scanning] > summary::after {
+.pixelguard-gmail[data-scanning] > .pg-summary::after {
   content: "";
   position: absolute;
   inset: auto auto 0 0;
@@ -78,14 +79,14 @@
   to { transform: translateX(280%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pixelguard-gmail[data-scanning] > summary::after { animation: none; width: 100%; background: var(--pg-line); }
+  .pixelguard-gmail[data-scanning] > .pg-summary::after { animation: none; width: 100%; background: var(--pg-line); }
 }
 .pixelguard-gmail > summary:hover { background: var(--pg-hover); }
 .pixelguard-gmail[open] > summary { border-radius: 9px 9px 0 0; border-bottom: 1px solid var(--pg-line); }
-.pixelguard-gmail > summary > img { width: 20px; height: 20px; flex: none; }
-.pixelguard-gmail > summary > strong { color: var(--pg-ink); font-size: 14px; }
+.pixelguard-gmail > .pg-summary > img { width: 20px; height: 20px; flex: none; }
+.pixelguard-gmail > .pg-summary > strong { color: var(--pg-ink); font-size: 14px; }
 .pixelguard-gmail .pg-status { min-width: 0; color: var(--pg-muted); padding-inline-start: 7px; line-height: 1.35; }
-.pixelguard-gmail > summary .pg-full-scan { margin-inline-start: auto; padding: 4px 10px; border: 1px solid var(--pg-action-border); border-radius: 6px; color: var(--pg-accent); background: var(--pg-surface); }
+.pixelguard-gmail > .pg-summary .pg-full-scan { margin-inline-start: auto; padding: 4px 10px; border: 1px solid var(--pg-action-border); border-radius: 6px; color: var(--pg-accent); background: var(--pg-surface); }
 .pixelguard-gmail > summary .pg-full-scan:not([hidden]) + .pg-chevron { margin-inline-start: 0; }
 .pixelguard-gmail [data-category="tracking-pixel"],
 .pixelguard-gmail [data-category="suspicious-image"] { --pg-category: var(--pg-suspicious); }
