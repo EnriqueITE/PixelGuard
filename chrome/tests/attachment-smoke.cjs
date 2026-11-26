@@ -127,9 +127,12 @@ async function main() {
     await mail.bringToFront();
     await buttons.first().click();
     // Chrome's toolbar widget may not be enumerated as a normal browser tab.
-    await config.waitForFunction(expected => chrome.extension.getViews().some(view => view !== window &&
-      !view.document.getElementById('result')?.hidden && view.document.getElementById('upload-confirmation')?.hidden &&
-      view.document.getElementById('attachment-sha')?.textContent === expected), hash(known));
+    await config.waitForFunction(expected => chrome.extension.getViews().some(view => {
+      const result = view.document.getElementById('result');
+      if (view === window || !result || result.hidden || view.document.getElementById('attachment-sha')?.textContent !== expected) return false;
+      const bounds = result.getBoundingClientRect();
+      return view.document.getElementById('upload-confirmation').hidden && bounds.top >= 0 && bounds.bottom <= view.innerHeight;
+    }), hash(known));
     assert.deepEqual(await requests(), [{method: 'GET', path: '/api/v3/files/' + hash(known)}]);
     assert.ok(!downloads.includes('0.2'), 'Reading the first card must not download the second attachment');
     await config.evaluate(() => chrome.extension.getViews().find(view => view !== window && view.document.getElementById('result')).close());

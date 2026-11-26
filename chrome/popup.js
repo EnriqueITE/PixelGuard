@@ -294,7 +294,16 @@
       PixelGuardVTInventory.reportUrl(result.reportUrl);
     report.hidden = !href;
     if (href) report.href = href; else report.removeAttribute("href");
-    el("result").hidden = false;
+    const resultBox = el("result");
+    resultBox.hidden = false;
+    requestAnimationFrame(() => {
+      if (resultBox.hidden) return;
+      const offer = el("upload-confirmation");
+      const last = offer.hidden ? resultBox : offer;
+      if (resultBox.getBoundingClientRect().top < 0 || last.getBoundingClientRect().bottom > document.documentElement.clientHeight) {
+        resultBox.scrollIntoView({block: "start", inline: "nearest"});
+      }
+    });
   }
   async function sha256(file) {
     const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());

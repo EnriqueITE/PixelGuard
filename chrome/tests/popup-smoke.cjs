@@ -420,9 +420,27 @@ async function run() {
     assert.equal(await address.inputValue(), manual, "A late row handoff can't replace an edit");
     assert.deepEqual(await page.evaluate(() => testState.lookups), []);
 
+    await page.setViewportSize({width: 366, height: 340});
+    for (const report of ["reported", "no_report"]) {
+      await openWidget({state: enabled, attachments: [{...attachments[0], hold: true}], attachment: handoff, report});
+      await page.waitForFunction(() => typeof window.deliverFile === "function");
+      // The user can keep navigating controls while Gmail is reading the file.
+      await q("panel-toggle").focus();
+      assert.equal(await page.evaluate(() => scrollY), 0);
+      await page.evaluate(() => window.deliverFile());
+      await q("result-title").waitFor();
+      const ids = report === "reported" ? ["result-title", "report"] : ["result-title", "cancel-upload", "confirm-upload"];
+      await page.waitForFunction(ids => scrollY > 0 && ids.every(id => {
+        const bounds = document.getElementById(id).getBoundingClientRect();
+        return bounds.height > 0 && bounds.top >= -1 && bounds.bottom <= innerHeight + 1;
+      }), ids, {timeout: 3000});
+      assert.equal(await page.evaluate(() => document.activeElement.id), "panel-toggle", "Scrolling keeps keyboard focus");
+      assert.deepEqual(await page.evaluate(() => testState.uploads), [], "Revealing upload options never confirms them");
+    }
+
     assert.deepEqual(errors, []);
     assert.deepEqual(outbound, [], "The popup never opens a selected or hovered email URL");
-    console.log("PASS settings, URL and attachment handoffs, hash checks, upload consent, stale reads and local files");
+    console.log("PASS settings, lookup handoffs, hash checks, upload consent, stale reads, local files and result scrolling");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });
