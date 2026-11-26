@@ -30,6 +30,8 @@ El detector se activa en `https://mail.google.com/mail/*`. El análisis del mens
 
 Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y activar **Modo oscuro**. El tema claro es el predeterminado. El interruptor cambia al instante el aspecto de los ajustes y del panel de los correos abiertos. La elección se guarda en el navegador.
 
+En cada hallazgo con una dirección web compatible, pulsa **VirusTotal**, junto a **Copiar URL**, para abrir el widget con esa dirección seleccionada. Funciona también con la dirección de un píxel o de una imagen que PixelGuard ha encontrado en el original. Puedes cambiar la selección, elegir **Consultar dominio** o pulsar **Revisar URL completa**. La consulta de la URL se envía cuando la confirmas.
+
 En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
 
 PixelGuard cifra la clave de API localmente con AES-GCM. La clave de cifrado de Web Crypto es no exportable y se conserva en IndexedDB, en el origen privado de la extensión. El navegador no sincroniza estas claves. Alguien que controle tu sesión de Windows o el perfil del navegador aún podría usar la integración. En **Gestionar clave**, **Eliminar clave y desactivar** borra la clave de API guardada y desactiva las consultas.
@@ -49,6 +51,7 @@ node chrome/tests/smoke.cjs
 node chrome/tests/original-smoke.cjs
 node chrome/tests/context-reload-smoke.cjs
 node chrome/tests/popup-smoke.cjs
+node chrome/tests/row-vt-smoke.cjs
 ```
 
 Puedes indicar el ejecutable de Chrome for Testing mediante `CHROME_FOR_TESTING`. Para contrastar el resultado con Gmail real, abre los mensajes elegidos en el buzón de prueba con la extensión cargada. Anota por separado el resumen y los indicios que aparecen al desplegarlo.

@@ -10,6 +10,8 @@
   let revision = 0;
   let preview = "";
   let inventoryRequest;
+  let sourceTab;
+  let rowUrl = "";
 
   document.documentElement.lang = chrome.i18n.getUILanguage();
   for (const item of document.querySelectorAll("[data-msg]")) item.textContent = t(item.dataset.msg);
@@ -91,6 +93,7 @@
       }
       if (!next?.ok) return showError(next?.error);
       state = next;
+      if (patch.vtEnabled === false || patch.apiKey === "") rowUrl = "";
       if (!next.vtEnabled) {
         forgetLookup();
         el("lookup").open = false;
@@ -102,6 +105,7 @@
         el("truncated").hidden = true;
       }
       if (close) keyForm(false);
+      if (next.vtEnabled && patch.vtEnabled === true && rowUrl) showRowLookup();
       if (patch.apiKey) status(t("vt_keySaved"));
     } catch { showError("storage"); }
     finally { saving = false; paint(); }
@@ -123,16 +127,56 @@
   };
   el("delete-key").onclick = () => save({ apiKey: "", vtEnabled: false }, { close: true });
 
+  async function sourceTabId() {
+    if (location.hash) {
+      const match = /^#tab=(0|[1-9]\d*)$/.exec(location.hash);
+      const id = match && Number(match[1]);
+      return Number.isSafeInteger(id) ? id : null;
+    }
+    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    return tab?.id;
+  }
+  async function fromMail(type) {
+    sourceTab ??= sourceTabId();
+    const id = await sourceTab;
+    if (id == null) return null;
+    return chrome.tabs.sendMessage(id, {type}, {frameId: 0});
+  }
+  function showRowLookup() {
+    inventoryRequest = null;
+    el("lookup").hidden = false;
+    el("lookup").open = true;
+    urlPicker.setLinks([{url: rowUrl}]);
+    urlPicker.selectUrl(rowUrl);
+    loadLinks();
+  }
+  async function takeRowSelection() {
+    const before = revision;
+    try {
+      const reply = await fromMail("pg:gmail:takeVtSelection");
+      const url = PixelGuardVTInventory.validUrl(reply?.url);
+      if (!url || before !== revision || saving) return;
+      rowUrl = url.href;
+      if (state.vtEnabled) {
+        showRowLookup();
+      } else {
+        if (state.hasKey) el("vt-toggle").focus();
+        else if (el("key-form").hidden) keyForm(true);
+        status(t("pgRowEnableVT"));
+      }
+    } catch { /* The toolbar also works on tabs without a Gmail content script. */ }
+  }
+
   async function loadLinks() {
     if (!state?.vtEnabled || inventoryRequest || !el("lookup").open) return;
     const request = {};
     inventoryRequest = request;
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id == null || request !== inventoryRequest) return;
-      const data = await chrome.tabs.sendMessage(tab.id, { type: "pg:gmail:links" });
+      const data = await fromMail("pg:gmail:links");
       if (request !== inventoryRequest) return;
-      urlPicker.setLinks(data?.links || []);
+      const links = data?.links || [];
+      if (rowUrl && !links.some(link => link.url === rowUrl)) links.unshift({url: rowUrl});
+      urlPicker.setLinks(links);
       el("truncated").hidden = !data?.truncated;
     } catch { /* Pasting a URL also works outside an open Gmail message. */ }
   }
@@ -206,5 +250,6 @@
     if (!reply?.ok) return showError(reply?.error);
     state = reply;
     paint();
+    takeRowSelection();
   }).catch(() => showError("storage"));
 })();

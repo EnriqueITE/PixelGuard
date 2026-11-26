@@ -26,8 +26,9 @@ async function run() {
       return route.fulfill({ path: path.join(extension, url.pathname.slice(1)) });
     });
     await page.addInitScript(({ catalog, sample }) => {
-      const state = { ok: true, hasKey: false, showPanel: true, vtEnabled: false };
-      window.testState = { granted: false, lookups: [], permissionRequests: 0, settings: [], inventory: 0 };
+      const fixture = JSON.parse(sessionStorage.getItem("rowFixture") || "{}");
+      const state = { ok: true, hasKey: false, showPanel: true, vtEnabled: false, ...fixture.state };
+      window.testState = { granted: false, lookups: [], permissionRequests: 0, settings: [], inventory: 0, mail: [] };
       const test = window.testState;
       test.links = [{ url: sample, label: "COMPRAR ENTRADAS" }, { url: "https://example.test/help", label: "Ayuda" }];
       const api = {
@@ -42,7 +43,16 @@ async function run() {
         permissions: { request: async () => { test.permissionRequests++; return test.granted; } },
         tabs: {
           query: async () => [{ id: 1 }],
-          sendMessage: async () => { test.inventory++; return { links: test.links }; }
+          async sendMessage(id, {type}, target) {
+            test.mail.push({type, id, frameId: target.frameId});
+            if (type === "pg:gmail:takeVtSelection") {
+              if (fixture.hold) await new Promise(resolve => { window.releaseRow = resolve; });
+              return {url: fixture.url};
+            }
+            if (type !== "pg:gmail:links") throw new Error("Unexpected Gmail message");
+            test.inventory++;
+            return { links: test.links };
+          }
         },
         runtime: { async sendMessage(msg) {
           if (msg.type === "pg:settings") {
@@ -211,9 +221,56 @@ async function run() {
     await q("save-key").click();
     await q("manage").waitFor();
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "apiKey"]);
+
+    const rowImage = "https://pixel.example.test/open.gif?id=customer-42#image";
+    let visit = 0;
+    async function openFromRow(fixture, hash = "") {
+      await page.evaluate(fixture => sessionStorage.setItem("rowFixture", JSON.stringify(fixture)), fixture);
+      await page.goto("https://popup.example.test/popup.html?visit=" + ++visit + hash);
+    }
+    await openFromRow({url: rowImage, state: {hasKey: true, vtEnabled: true}}, "#tab=42");
+    await page.waitForFunction(() => document.querySelector("#lookup").open && testState.inventory === 1);
+    assert.equal(await address.inputValue(), rowImage);
+    assert.equal(await address.getAttribute("title"), rowImage);
+    assert.equal(await picked.innerText(), rowImage);
+    await q("show-links").click();
+    await list.getByRole("option", {name: rowImage, exact: true}).waitFor();
+    await list.getByRole("option", {name: sample, exact: true}).click();
+    assert.equal(await address.inputValue(), sample, "The row handoff keeps the regular link picker");
+    assert.deepEqual(await page.evaluate(() => testState.mail), [
+      {type: "pg:gmail:takeVtSelection", id: 42, frameId: 0},
+      {type: "pg:gmail:links", id: 42, frameId: 0}
+    ]);
+    await q("preview-url").click();
+    assert.equal(await q("exact-url").innerText(), sample);
+    assert.deepEqual(await page.evaluate(() => testState.lookups), []);
+
+    await openFromRow({url: rowImage});
+    await q("key-form").waitFor();
+    assert.equal(await q("lookup").isVisible(), false);
+    assert.equal(await q("status").innerText(), catalog.pgRowEnableVT.message);
+    await q("key").fill("0123456789abcdef".repeat(4));
+    await q("save-key").click();
+    await q("manage").waitFor();
+    assert.equal(await q("vt-toggle").isChecked(), false);
+    assert.equal(await page.evaluate(() => testState.permissionRequests), 0);
+    await page.evaluate(() => { testState.granted = true; });
+    await q("vt-toggle").click();
+    await address.waitFor();
+    assert.equal(await address.inputValue(), rowImage, "Manual setup preserves the chosen URL");
+    assert.deepEqual(await page.evaluate(() => testState.lookups), []);
+    assert.equal(await page.evaluate(() => testState.mail[0].id), 1);
+
+    await openFromRow({url: rowImage, state: {hasKey: true, vtEnabled: true}, hold: true});
+    await q("lookup").locator("summary").click();
+    await address.fill(manual);
+    await page.evaluate(() => window.releaseRow());
+    assert.equal(await address.inputValue(), manual, "A late row handoff can't replace an edit");
+    assert.deepEqual(await page.evaluate(() => testState.lookups), []);
+
     assert.deepEqual(errors, []);
     assert.deepEqual(outbound, [], "The popup never opens a selected or hovered email URL");
-    console.log("PASS theme and key settings, native URL hover hints, stable picker layout, keyboard selection, manual entry and explicit domain/URL lookups");
+    console.log("PASS theme and key settings, native URL hover hints, Gmail row handoff, manual setup and explicit domain/URL lookups");
   } finally { await browser.close(); }
 }
 run().catch(err => { console.error(err); process.exitCode = 1; });

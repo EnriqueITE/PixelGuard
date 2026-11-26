@@ -197,18 +197,55 @@ async function mailboxHint(sender) {
   return {ok: true, hint: typeof hint === 'string' && /^[a-f\d]{8,16}$/i.test(hint) ? hint : ''};
 }
 
+async function openVirusTotal(sender) {
+  const {id, windowId, incognito} = sender.tab;
+  if (!Number.isSafeInteger(windowId) || windowId < 0) return fail('unauthorized');
+  // Gmail switches threads with a fragment. Chromium's sender.url can still
+  // describe the original document; sender.tab.url is the tab at the click.
+  const documentUrl = sender.url.split('#', 1)[0];
+  let sourceUrl = sender.tab.url;
+  async function sourceIsActive() {
+    const tab = await chrome.tabs.get(id);
+    if (!tab.url || tab.url.split('#', 1)[0] !== documentUrl) return false;
+    sourceUrl ??= tab.url;
+    return tab.active && tab.windowId === windowId && tab.url === sourceUrl &&
+      (!tab.pendingUrl || tab.pendingUrl === tab.url);
+  }
+  if (!await sourceIsActive()) return fail('unavailable');
+  if (chrome.action.openPopup) {
+    try {
+      await chrome.action.openPopup({windowId});
+      return {ok: true};
+    } catch {
+      // Some Chromium versions expose openPopup only to policy-installed extensions.
+      if (!await sourceIsActive()) return fail('unavailable');
+    }
+  }
+  // Only the source tab ID travels in the window URL. The popup reads the
+  // selected row directly from that tab, including in a private window.
+  await chrome.windows.create({
+    type: 'popup', url: chrome.runtime.getURL('popup.html') + '#tab=' + id,
+    width: 410, height: 560, incognito: !!incognito
+  });
+  return {ok: true};
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup', 'pg:gmail:mailboxHint'].includes(msg?.type)) return false;
-  const fromPopup = sender.url === chrome.runtime.getURL('popup.html');
-  const fromGmail = sender.frameId === 0 && Number.isInteger(sender.tab?.id) && sender.tab.id >= 0 &&
+  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup', 'pg:gmail:mailboxHint', 'pg:gmail:openVirusTotal'].includes(msg?.type)) return false;
+  const popupUrl = chrome.runtime.getURL('popup.html');
+  const fromPopup = sender.url === popupUrl || (sender.url?.startsWith(popupUrl) &&
+    /^#tab=(0|[1-9]\d{0,9})$/.test(sender.url.slice(popupUrl.length)));
+  const fromGmail = sender.frameId === 0 && Number.isSafeInteger(sender.tab?.id) && sender.tab.id >= 0 &&
     sender.url?.startsWith('https://mail.google.com/mail/');
-  if (msg.type === 'pg:badge' || msg.type === 'pg:gmail:mailboxHint') {
+  if (msg.type === 'pg:badge' || msg.type === 'pg:gmail:mailboxHint' || msg.type === 'pg:gmail:openVirusTotal') {
     if (!fromGmail || sender.id !== chrome.runtime.id || (sender.documentLifecycle && sender.documentLifecycle !== 'active')) {
       reply(fail('unauthorized'));
       return false;
     }
     if (msg.type === 'pg:gmail:mailboxHint') {
       mailboxHint(sender).then(reply, () => reply({ok: true, hint: ''}));
+    } else if (msg.type === 'pg:gmail:openVirusTotal') {
+      openVirusTotal(sender).then(reply, () => reply(fail('unavailable')));
     } else {
       updateBadge(sender.tab.id, msg).then(reply, () => reply(fail('unavailable')));
     }

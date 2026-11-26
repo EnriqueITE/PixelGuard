@@ -130,7 +130,7 @@
   user-select: all;
 }
 .pixelguard-gmail .pg-row-foot { align-items: center; color: var(--pg-muted); font-size: 12px; }
-.pixelguard-gmail .pg-row-foot button { margin-inline-start: auto; }
+.pixelguard-gmail .pg-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-inline-start: auto; }
 .pixelguard-gmail button { margin: 0; border: 0; border-radius: 4px; padding: 4px 6px; background: transparent; color: var(--pg-accent); font: 600 12px/1.5 system-ui, sans-serif; cursor: pointer; }
 .pixelguard-gmail button:hover:enabled { background: var(--pg-hover); }
 .pixelguard-gmail button:disabled { color: var(--pg-disabled); cursor: default; font-weight: 400; }

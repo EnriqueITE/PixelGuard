@@ -9,7 +9,9 @@
   const lifetime = new AbortController();
   const extensionId = chrome.runtime.id;
   const iconUrl = chrome.runtime.getURL("assets/icon-48.png");
+  const popupUrl = chrome.runtime.getURL("popup.html");
   let refreshTimer, preferenceTimer;
+  let vtSelection, vtSelectionTimer;
   const originalPage = new URL(location.href).searchParams.get("view") === "om";
   let originalPageRecord;
   const maxOriginalReads = 2;
@@ -132,6 +134,37 @@
     return "";
   }
 
+  function clearVtSelection() {
+    clearTimeout(vtSelectionTimer);
+    vtSelection = null;
+  }
+
+  async function openVirusTotal(event, url, panel) {
+    const control = event.currentTarget;
+    if (!event.isTrusted || !contextActive() || !control.isConnected) return;
+    const actions = control.parentElement;
+    actions.querySelector('[role="status"]')?.remove();
+    clearVtSelection();
+    const selection = {url, panel, page: location.href};
+    vtSelection = selection;
+    // Only the opening widget can take this short-lived selection. The worker opens it without the URL.
+    vtSelectionTimer = setTimeout(clearVtSelection, 30000);
+    control.disabled = true;
+    try {
+      const result = await chrome.runtime.sendMessage({type: "pg:gmail:openVirusTotal"});
+      if (!result?.ok) throw new Error("Widget unavailable");
+    } catch {
+      if (vtSelection === selection) clearVtSelection();
+      if (contextActive() && control.isConnected) {
+        const notice = element("span", "", t("gmailVtOpenFailed"));
+        notice.setAttribute("role", "status");
+        actions.append(notice);
+      }
+    } finally {
+      control.disabled = false;
+    }
+  }
+
   function drawPage(state) {
     if (!contextActive()) return;
     const {filter, list, footer, prev, next, range} = state;
@@ -171,7 +204,16 @@
         if (contextActive() && copy.isConnected) copy.textContent = t("gmailCopied");
       });
       const detail = element("div", "pg-row-foot");
-      detail.append(element("span", "", reason), copy);
+      const actions = element("div", "pg-row-actions");
+      actions.append(copy);
+      const target = PixelGuardVTInventory.validUrl(item.url);
+      if (target) {
+        const vt = button("VirusTotal");
+        vt.title = t("gmailVtOpen");
+        vt.addEventListener("click", event => openVirusTotal(event, target.href, state.panel));
+        actions.append(vt);
+      }
+      detail.append(element("span", "", reason), actions);
       li.append(url, detail);
       rows.append(li);
     }
@@ -460,6 +502,7 @@
     observer.disconnect();
     clearTimeout(refreshTimer);
     clearTimeout(preferenceTimer);
+    clearVtSelection();
     for (const entry of messages.values()) {
       entry.request?.abort();
       entry.view?.panel.remove();
@@ -496,7 +539,8 @@
       "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
   });
   const listenerOptions = {signal: lifetime.signal};
-  window.addEventListener("hashchange", scheduleRefresh, listenerOptions);
+  window.addEventListener("hashchange", () => { clearVtSelection(); scheduleRefresh(); }, listenerOptions);
+  window.addEventListener("pagehide", clearVtSelection, listenerOptions);
   window.addEventListener("pageshow", event => {
     if (event.persisted) { lastCounts = ""; scheduleRefresh(); }
   }, listenerOptions);
@@ -524,6 +568,11 @@
       reply({ready: true});
     } else if (message.type === "pg:gmail:links") {
       reply(linkInventory());
+    } else if (message.type === "pg:gmail:takeVtSelection") {
+      if (sender.url?.split("#")[0] !== popupUrl) return;
+      const selection = vtSelection;
+      clearVtSelection();
+      reply({url: selection?.page === location.href && selection.panel.isConnected ? selection.url : null});
     } else if (message.type === "pg:panelChanged") {
       applyPreferences(message);
     }

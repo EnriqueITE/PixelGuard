@@ -13,6 +13,8 @@ function harness(shared = { data: {} }) {
   const data = shared.data;
   const requests = [];
   const openedTabs = [];
+  const openedPopups = [];
+  const openedWindows = [];
   const broadcasts = [];
   const badges = new Map();
   function setBadge(tabId, patch) {
@@ -21,13 +23,15 @@ function harness(shared = { data: {} }) {
   }
   const origin = 'chrome-extension://sample/';
   const popup = { id: 'sample', url: origin + 'popup.html' };
-  const gmail = { id: 'sample', url: 'https://mail.google.com/mail/u/0/', frameId: 0, tab: { id: 1, windowId: 3 } };
+  const gmailUrl = 'https://mail.google.com/mail/u/0/';
+  const gmail = { id: 'sample', url: gmailUrl, frameId: 0, tab: { id: 1, windowId: 3, url: gmailUrl } };
   let handler, revoked, access, permission = false;
   const chrome = {
     scripting: shared.scripting,
     runtime: { id: 'sample', getURL: p => origin + p, getManifest: () => ({ name: 'PixelGuard for Gmail' }),
       onMessage: { addListener(fn) { handler = fn; } }, onInstalled: { addListener() {} }, onStartup: { addListener() {} } },
     action: {
+      async openPopup(options) { openedPopups.push(clone(options)); },
       async setBadgeText({ tabId, text }) { setBadge(tabId, { text }); },
       async setBadgeBackgroundColor({ tabId, color }) { setBadge(tabId, { color }); },
       async setTitle({ tabId, title }) { setBadge(tabId, { title }); }
@@ -51,10 +55,12 @@ function harness(shared = { data: {} }) {
       async remove(key) { assert.equal(access, 'TRUSTED_CONTEXTS'); delete data[key]; }
     } },
     tabs: {
+      async get(id) { assert.equal(id, gmail.tab.id); return { ...gmail.tab, url: gmail.url, active: true }; },
       async query() { return [{ id: 1 }, { id: 2 }]; },
       async sendMessage(id, msg) { broadcasts.push(clone(msg)); },
       async create(options) { openedTabs.push(clone(options)); }
     },
+    windows: { async create(options) { openedWindows.push(clone(options)); } },
     permissions: { async contains(p) {
       assert.deepEqual(clone(p), { origins: ['https://www.virustotal.com/*'] });
       return permission;
@@ -86,7 +92,7 @@ function harness(shared = { data: {} }) {
     const asyncReply = handler({ type, ...fields }, sender, value => resolve(clone(value)));
     if (!asyncReply) resolve(undefined);
   });
-  return { send, data, broadcasts, requests, gmail, badges, openedTabs,
+  return { send, data, broadcasts, requests, gmail, popup, badges, openedTabs, openedPopups, openedWindows, chrome,
     grant() { permission = true; },
     revoke() { permission = false; revoked({ origins: ['https://www.virustotal.com/*'] }); }
   };
@@ -183,6 +189,81 @@ test('ignores requests from older content scripts to open the original in anothe
   const h = harness();
   assert.equal(await h.send('pg:openOriginal', { messageId: 'fedcbafeedac1234' }, h.gmail), undefined);
   assert.deepEqual(h.openedTabs, []);
+});
+
+test('the Gmail row opens its own toolbar widget without sending or storing a URL', async () => {
+  const h = harness();
+  for (const sender of [h.popup, ...[
+    {id: 'other'}, {frameId: 1}, {documentLifecycle: 'cached'}, {url: 'https://mail.google.com.example/mail/'},
+    {tab: {id: -1, windowId: 3}}, {tab: {id: 1, windowId: -1}}, {tab: {id: 1}}
+  ].map(override => ({...h.gmail, ...override}))]) {
+    assert.equal((await h.send('pg:gmail:openVirusTotal', {}, sender)).error, 'unauthorized');
+  }
+  assert.deepEqual(h.openedPopups, []);
+  const reply = await h.send('pg:gmail:openVirusTotal', {tabId: 99, windowId: 77, url: 'https://ignored.test/path'}, h.gmail);
+  assert.deepEqual(reply, {ok: true});
+  assert.deepEqual(h.openedPopups, [{windowId: 3}]);
+  assert.deepEqual(h.openedWindows, []);
+  assert.deepEqual(h.broadcasts, []);
+  assert.deepEqual(h.requests, []);
+  assert.deepEqual(h.data, {});
+});
+
+test('the fallback popup receives only the source tab ID and retains private browsing', async () => {
+  const h = harness();
+  const sender = {...h.gmail, tab: {...h.gmail.tab, incognito: true}};
+  for (const open of [undefined, async () => { throw Error('Toolbar popup unavailable'); }]) {
+    h.chrome.action.openPopup = open;
+    assert.deepEqual(await h.send('pg:gmail:openVirusTotal', {}, sender), {ok: true});
+    assert.deepEqual(h.openedWindows.at(-1), {
+      type: 'popup', url: h.popup.url + '#tab=1', width: 410, height: 560, incognito: true
+    });
+  }
+  const hasState = url => h.send('pg:state', {}, {...h.popup, url});
+  assert.equal((await hasState(h.popup.url + '#tab=0')).ok, true);
+  assert.equal((await hasState(h.openedWindows[0].url)).ok, true);
+  for (const suffix of ['?tab=1', '/#tab=1', '#tab=-1', '#tab=01', '#tab=1.0', '#tab=1&url=x', '#tab=99999999999999999']) {
+    assert.equal((await hasState(h.popup.url + suffix)).error, 'unauthorized');
+  }
+  assert.deepEqual(h.requests, []);
+  assert.deepEqual(h.data, {});
+});
+
+test('tab switches, navigations and closed tabs cancel the widget handoff', async () => {
+  const h = harness();
+  const original = h.chrome.tabs.get;
+  for (const change of [{active: false}, {windowId: 4}, {url: h.gmail.url + '#other'}, {pendingUrl: 'https://elsewhere.test/'}]) {
+    h.chrome.tabs.get = async id => ({...await original(id), ...change});
+    assert.equal((await h.send('pg:gmail:openVirusTotal', {}, h.gmail)).error, 'unavailable');
+  }
+  h.chrome.tabs.get = original;
+  h.chrome.action.openPopup = async () => {
+    h.chrome.tabs.get = async () => { throw Error('Tab removed'); };
+    throw Error('Toolbar popup unavailable');
+  };
+  assert.equal((await h.send('pg:gmail:openVirusTotal', {}, h.gmail)).error, 'unavailable');
+  assert.deepEqual(h.openedPopups, []);
+  assert.deepEqual(h.openedWindows, []);
+  assert.deepEqual(h.requests, []);
+});
+
+test('Gmail can change a thread fragment before a click and keep the same sending document', async () => {
+  const h = harness();
+  const clicked = h.gmail.url + '#inbox/clicked';
+  const original = h.chrome.tabs.get;
+  h.chrome.tabs.get = async id => ({...await original(id), url: clicked});
+  const sender = {...h.gmail, url: h.gmail.url + '#inbox/first', tab: {...h.gmail.tab, url: clicked}};
+  assert.equal((await h.send('pg:gmail:openVirusTotal', {}, sender)).ok, true);
+  delete sender.tab.url;
+  assert.equal((await h.send('pg:gmail:openVirusTotal', {}, sender)).ok, true);
+  h.chrome.action.openPopup = async () => {
+    h.chrome.tabs.get = async id => ({...await original(id), url: h.gmail.url + '#inbox/next'});
+    throw Error('Toolbar cannot open');
+  };
+  assert.equal((await h.send('pg:gmail:openVirusTotal', {}, sender)).error, 'unavailable');
+  h.chrome.tabs.get = async id => ({...await original(id), url: 'https://mail.google.com/mail/u/1/#inbox/other-account'});
+  assert.equal((await h.send('pg:gmail:openVirusTotal', {}, sender)).error, 'unavailable');
+  assert.deepEqual(h.openedWindows, []);
 });
 
 test('reads only the native routing hint from the requesting Gmail account and document', async () => {

@@ -41,8 +41,8 @@ function initUrlPicker(onChange) {
     setActive(null);
     expand(matches > 0);
   }
-  function choose(option) {
-    input.value = option.textContent;
+  function selectUrl(value) {
+    input.value = value;
     input.title = input.value;
     close();
     input.focus({preventScroll: true});
@@ -76,7 +76,7 @@ function initUrlPicker(onChange) {
       close();
     } else if (event.key === "Enter" && active) {
       event.preventDefault();
-      choose(active);
+      selectUrl(active.textContent);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (list.hidden) open();
       if (list.hidden) return;
@@ -90,7 +90,7 @@ function initUrlPicker(onChange) {
   list.onmousedown = event => event.preventDefault(); // Keep keyboard focus in the field.
   list.onclick = event => {
     const option = event.target.closest('[role="option"]');
-    if (option) choose(option);
+    if (option) selectUrl(option.textContent);
   };
   // Collapse after the click lands, so the action buttons below the list stay put during the click.
   document.addEventListener("click", event => {
@@ -100,8 +100,10 @@ function initUrlPicker(onChange) {
 
   function setLinks(links) {
     close();
-    picked.hidden = true;
-    picked.textContent = "";
+    if (!input.value) {
+      picked.hidden = true;
+      picked.textContent = "";
+    }
     const options = document.createDocumentFragment();
     for (const {url: raw} of links) {
       const url = PixelGuardVTInventory.validUrl(raw);
@@ -118,5 +120,5 @@ function initUrlPicker(onChange) {
     list.replaceChildren(options);
     toggle.hidden = !list.childElementCount;
   }
-  return {setLinks, close};
+  return {setLinks, selectUrl, close};
 }
