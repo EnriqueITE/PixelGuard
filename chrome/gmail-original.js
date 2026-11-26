@@ -163,7 +163,7 @@
         continue;
       }
       checkCurrent();
-      return PixelGuardOriginalMime.html(source);
+      return PixelGuardOriginalMime.bodyParts(source);
     }
   }
 

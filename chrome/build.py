@@ -12,13 +12,13 @@ def build():
     files = {name: SOURCE / name for name in (
         "manifest.json", "PRIVACY.md", "gmail.js", "gmail.css", "scanner.js", "worker.js", "vault.js",
         "popup.html", "popup.css", "popup-url.js", "popup-attachments.js", "popup.js",
-        "virustotal/widget.js", "virustotal/attachments.js",
+        "virustotal/inventory.js", "virustotal/widget.js", "virustotal/attachments.js",
         "original-mime.js", "original-scan.js", "gmail-original.js", "gmail-attachments.js"
     )}
     for size in (16, 24, 32):
         name = f"assets/toolbar-{size}.png"
         files[name] = SOURCE / name
-    for name in ("assets/icon-48.png", "assets/icon-96.png", "virustotal/inventory.js", "LICENSE", "NOTICE"):
+    for name in ("assets/icon-48.png", "assets/icon-96.png", "LICENSE", "NOTICE"):
         files[name] = ROOT / name
     for name, source in files.items():
         target = OUTPUT / name
@@ -27,7 +27,8 @@ def build():
     for locale in ("en", "es"):
         catalog = Path("_locales") / locale / "messages.json"
         shared = json.loads((ROOT / catalog).read_text(encoding="utf-8"))
-        messages = {key: value for key, value in shared.items() if key.startswith(("reason_", "vt_"))}
+        messages = {key: value for key, value in shared.items()
+                    if key.startswith(("reason_", "vt_")) or key == "ui_buyCoffee"}
         messages.update(json.loads((SOURCE / f"messages.{locale}.json").read_text(encoding="utf-8")))
         target = OUTPUT / catalog
         target.parent.mkdir(parents=True, exist_ok=True)

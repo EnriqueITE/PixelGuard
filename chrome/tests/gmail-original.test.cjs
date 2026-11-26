@@ -21,6 +21,12 @@ function bodyWith(attrs) {
 const account = new URL('https://mail.google.com/mail/u/2/#inbox/threadOnly');
 const id = '1f0102040a0c0001';
 const eml = 'Content-Type: text/html; charset=utf-8\r\n\r\n<p>Prueba ☃</p>';
+function assertReadBody(original) {
+  assert.equal(original.partial, false);
+  assert.equal(original.parts.length, 1);
+  assert.equal(original.parts[0].type, 'text/html');
+  assert.equal(original.parts[0].content, '<p>Prueba ☃</p>');
+}
 
 test('uses an individual message from the active Gmail account, preserving all 64 bits', () => {
   const api = harness(account);
@@ -47,7 +53,7 @@ test('retrieves only Gmail’s own original as bytes, with cancellation and no r
     assert.equal(options.signal, signal);
     return new Response(eml, { headers: { 'content-type': 'message/rfc822' } });
   });
-  assert.equal(await api.read(id, signal), '<p>Prueba ☃</p>');
+  assertReadBody(await api.read(id, signal));
   await assert.rejects(api.read('123&th=456', signal), /Invalid/);
   assert.equal(requests, 1);
 });
@@ -85,7 +91,7 @@ test('a full scan uses the permanent ID from the message wrapper, independently 
     urls.push(new URL(url));
     return new Response(eml, { headers: { 'content-type': 'message/rfc822' } });
   });
-  assert.equal(await api.read(id, undefined, body), '<p>Prueba ☃</p>');
+  assertReadBody(await api.read(id, undefined, body));
   assert.equal(urls[0].pathname, '/mail/u/2/');
   assert.equal(urls[0].searchParams.get('view'), 'att');
   assert.equal(urls[0].searchParams.get('permmsgid'), permanent);
@@ -112,7 +118,7 @@ test('falls back to the actual legacy download only when the permanent download 
       assert.equal(params.get('ik'), hint || null);
       return params.get('th') === id ? new Response(eml) : new Response('Unavailable', {status: 404});
     }, [], runtime);
-    assert.equal(await api.read(id, undefined, body), '<p>Prueba ☃</p>');
+    assertReadBody(await api.read(id, undefined, body));
     assert.deepEqual(observed, hint ? [nativeView, permDownload, legacyDownload] : [permDownload, nativeView, legacyDownload]);
   }
 });
@@ -165,7 +171,7 @@ test('the default scan reads the native source view on the first request when Gm
     assert.equal(params.get('permmsgid'), 'msg-f:' + BigInt('0x' + id));
     return new Response('<pre class="raw_message_text"></pre>', {headers: {'content-type': 'text/html'}});
   }, [], runtime, implementation);
-  assert.equal(await api.read(id), '<p>Prueba ☃</p>');
+  assertReadBody(await api.read(id));
   assert.equal(lookups, 1);
   assert.deepEqual(views, ['om']);
 });
@@ -185,7 +191,7 @@ test('tries one download after a rejected native source, and ignores malformed o
       assert.equal(params.get('ik'), order.length === 2 ? reply.hint : null);
       return params.get('view') === 'om' ? new Response('Unavailable', {status: 404}) : new Response(eml);
     }, [], {sendMessage: async () => { if (!reply) throw Error('Worker unavailable'); return reply; }});
-    assert.equal(await api.read(id), '<p>Prueba ☃</p>');
+    assertReadBody(await api.read(id));
     assert.deepEqual(views, order);
   }
 });
@@ -221,7 +227,7 @@ test('does not request the original again after a size limit, cancellation, or u
   const ctrl = new AbortController();
   for (const [download, expected] of [
     [() => new Response(eml, { headers: { 'content-length': String(8 * 1024 * 1024 + 1) } }), /too large/],
-    [() => new Response('Content-Type: text/plain\r\n\r\nA plain message'), /no HTML/],
+    [() => new Response('Content-Type: application/octet-stream\r\n\r\nData'), /no displayable text body/],
     [() => { ctrl.abort(); throw new Error('Cancelled'); }, /Cancelled/]
   ]) {
     let requests = 0;

@@ -20,6 +20,14 @@
   const TRACKING_HOST_RE = /(^|[.-])(pixel|beacon|tracking?|trk|analytics|events)([.-]|$)/i;
   const LINK_PATH_RE = /(^|[\/._-])(unsubscribe|click|tracking?|redirect|redir|trk|link)([\/._-]|$)/i;
   const LINK_HOST_RE = /(^|[.-])(click|tracking?|trk|links?)([.-]|$)/i;
+  const MAX_SCAN_NODES = 20000;
+  const MAX_SCAN_URLS = 4096;
+  const MAX_SCAN_CHARS = 4 * 1024 * 1024;
+  const MAX_ATTRIBUTE_CHARS = 65536;
+  const MAX_URL_CHARS = 16384;
+  const MAX_ELEMENT_IMAGES = 128;
+  const MAX_TEXT_NODES = 501;
+  const MAX_LINKS_PER_TEXT = 50;
   const AMAZON_STORES = new Set([
     "amazon.ae", "amazon.ca", "amazon.co.jp", "amazon.co.uk", "amazon.co.za",
     "amazon.com", "amazon.com.au", "amazon.com.be", "amazon.com.br", "amazon.com.mx",
@@ -58,7 +66,7 @@
   }
 
   function parseStyle(styleText) {
-    const result = {};
+    const result = Object.create(null);
     String(styleText || "").split(";").forEach(part => {
       const idx = part.indexOf(":");
       if (idx === -1) return;
@@ -67,7 +75,7 @@
     return result;
   }
 
-  function getComputedStyleSafe(el) {
+  function getComputedStyleSafe(el, inlineStyle) {
     try {
       const view = el?.ownerDocument?.defaultView;
       if (view?.getComputedStyle) return view.getComputedStyle(el);
@@ -75,20 +83,7 @@
       // declarations still record an explicit display:none or opacity:0.
       if (el?.style) return el.style;
     } catch (_) {}
-    return parseStyle(el?.getAttribute?.("style") || "");
-  }
-
-  function explicitImageMetrics(el) {
-    const attrs = {
-      width: parseCssNumber(el?.getAttribute?.("width")),
-      height: parseCssNumber(el?.getAttribute?.("height"))
-    };
-    const inlineStyle = parseStyle(el?.getAttribute?.("style") || "");
-    const styled = {
-      width: parseCssNumber(inlineStyle.width),
-      height: parseCssNumber(inlineStyle.height)
-    };
-    return { attrs, styled };
+    return inlineStyle;
   }
 
   function hasTinyPair(size) {
@@ -99,11 +94,21 @@
     return size.width === 0 || size.height === 0;
   }
 
-  function getVisibilitySignals(el) {
+  function boundedAttribute(value) {
+    return value && value.length > MAX_ATTRIBUTE_CHARS ? null : value || "";
+  }
+
+  function getVisibilitySignals(el, readField = boundedAttribute, styleText = readField(el?.getAttribute?.("style"))) {
     if (!el) return [];
     const signals = [];
-    const { attrs, styled } = explicitImageMetrics(el);
-    const style = getComputedStyleSafe(el);
+    const inlineStyle = parseStyle(styleText);
+    const attrs = {
+      width: parseCssNumber(readField(el.getAttribute?.("width"))),
+      height: parseCssNumber(readField(el.getAttribute?.("height")))
+    };
+    const styled = {width: parseCssNumber(inlineStyle.width), height: parseCssNumber(inlineStyle.height)};
+    // null means the style exceeded a budget. Do not ask CSSOM to evaluate it.
+    const style = styleText === null ? inlineStyle : getComputedStyleSafe(el, inlineStyle);
     const displayNone = style.display === "none";
     const visibilityHidden = style.visibility === "hidden";
     const opacityZero = style.opacity !== "" && Number(style.opacity ?? 1) === 0;
@@ -176,14 +181,14 @@
     return describeSignals(signals);
   }
 
-  function classifyImage(rawUrl, options = {}, el = null, source = "src") {
+  function classifyImage(rawUrl, options = {}, el = null, source = "src", cachedVisibility) {
     if (options.resolveImageUrl) rawUrl = options.resolveImageUrl(rawUrl);
     if (!isRemote(rawUrl)) return null;
     const u = tryURL(rawUrl);
     if (!u) return null;
 
     const signals = [];
-    const visibilitySignals = getVisibilitySignals(el);
+    const visibilitySignals = cachedVisibility ?? getVisibilitySignals(el);
     signals.push(...visibilitySignals);
 
     const idParams = matchingParams(u, IMAGE_ID_PARAMS);
@@ -272,93 +277,155 @@
     }
   }
 
-  function srcsetCandidates(value) {
-    return String(value || "")
-      .split(",")
-      .map(part => (part.trim().split(/\s+/)[0] || "").trim())
-      .filter(Boolean);
+  function* imageCandidates(el, style, readField) {
+    if (el.localName === "img") {
+      for (const source of ["src", "srcset", "data-src", "data-original", "data-lazy", "data-lazy-src", "data-url", "data-srcset"]) {
+        const value = readField(el.getAttribute(source));
+        if (!value) continue;
+        if (source.endsWith("srcset")) {
+          for (const match of value.matchAll(/(?:^|,)\s*([^,\s]+)/g)) yield [match[1], source];
+        } else {
+          yield [value, source];
+        }
+      }
+    }
+    if (!style) return;
+    // Advance past each complete value. An unclosed value consumes the tail once.
+    const start = /url\(/gi;
+    while (start.exec(style)) {
+      const end = style.indexOf(")", start.lastIndex);
+      if (end < 0) break;
+      const url = style.slice(start.lastIndex, end).replace(/["']/g, "").trim();
+      start.lastIndex = end + 1;
+      if (url) yield [url, "css background"];
+    }
+  }
+
+  function emptyResult(partial = false) {
+    return { suspicious: [], externals: [], links: [], partial };
   }
 
   function scanDocument(doc, options = {}) {
-    const result = { suspicious: [], externals: [], links: [] };
-    if (!doc?.querySelectorAll) return result;
-    const excluded = node => !!options.excludeNode?.(node);
+    const result = emptyResult();
+    let remainingChars = MAX_SCAN_CHARS;
+    let urls = 0;
+    let nodes = 0;
+    let textNodes = 0;
 
-    doc.querySelectorAll("img").forEach(img => {
-      if (excluded(img)) return;
-      addFinding(result, classifyImage(img.getAttribute("src") || "", options, img, "src"));
-      srcsetCandidates(img.getAttribute("srcset")).forEach(url => {
-        addFinding(result, classifyImage(url, options, img, "srcset"));
-      });
-      ["data-src", "data-original", "data-lazy", "data-lazy-src", "data-url"].forEach(attr => {
-        addFinding(result, classifyImage(img.getAttribute(attr), options, img, attr));
-      });
-      srcsetCandidates(img.getAttribute("data-srcset")).forEach(url => {
-        addFinding(result, classifyImage(url, options, img, "data-srcset"));
-      });
-    });
-
-    doc.querySelectorAll('[style*="url("]').forEach(el => {
-      if (excluded(el)) return;
-      const urls = Array.from(String(el.getAttribute("style") || "").matchAll(/url\(([^)]+)\)/gi))
-        .map(m => (m[1] || "").replace(/["']/g, "").trim());
-      urls.forEach(url => addFinding(result, classifyImage(url, options, el, "css background")));
-    });
-
-    doc.querySelectorAll("a[href]").forEach(a => {
-      if (excluded(a)) return;
-      addFinding(result, classifyLink(a.getAttribute("href") || ""));
-    });
+    function readField(value, limit = MAX_ATTRIBUTE_CHARS) {
+      if (!value) return "";
+      if (value.length > limit || value.length > remainingChars) {
+        result.partial = true;
+        return null;
+      }
+      remainingChars -= value.length;
+      return value;
+    }
+    function acceptUrl(url) {
+      if (++urls > MAX_SCAN_URLS || url.length > MAX_URL_CHARS) {
+        result.partial = true;
+        return false;
+      }
+      return true;
+    }
+    function scanElement(el) {
+      const style = readField(el.getAttribute("style"));
+      let visibility, images = 0;
+      for (const [url, source] of imageCandidates(el, style, readField)) {
+        if (++images > MAX_ELEMENT_IMAGES) {
+          result.partial = true;
+          break;
+        }
+        if (acceptUrl(url)) {
+          visibility ??= getVisibilitySignals(el, readField, style);
+          addFinding(result, classifyImage(url, options, el, source, visibility));
+        }
+        if (urls > MAX_SCAN_URLS) return;
+      }
+      if (el.localName === "a") {
+        const href = readField(el.getAttribute("href"), MAX_URL_CHARS);
+        if (href && acceptUrl(href)) addFinding(result, classifyLink(href));
+      }
+    }
+    function scanText(node) {
+      if (++textNodes > MAX_TEXT_NODES) {
+        result.partial = true;
+        return;
+      }
+      const text = readField(node.nodeValue, MAX_SCAN_CHARS);
+      if (!text) return;
+      let count = 0;
+      for (const [url] of text.matchAll(/https?:\/\/[\w\-._~%!$&'()*+,;=:@/?#\[\]]+/gi)) {
+        if (++count > MAX_LINKS_PER_TEXT) {
+          result.partial = true;
+          break;
+        }
+        if (acceptUrl(url)) addFinding(result, classifyLink(url));
+        if (urls > MAX_SCAN_URLS) return;
+      }
+    }
 
     try {
       const owner = doc.ownerDocument || doc;
-      const walker = owner.createTreeWalker(doc.body || doc, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-          if (excluded(node)) return NodeFilter.FILTER_REJECT;
-          return node.nodeType === 3 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-        }
-      });
-      const urlRegex = /(https?:\/\/[\w\-._~%!$&'()*+,;=:@/?#\[\]]+)/gi;
-      let checked = 0;
+      const filter = options.excludeNode && {acceptNode: node =>
+        options.excludeNode(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT};
+      const walker = owner.createTreeWalker(doc.body || doc, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, filter);
       while (walker.nextNode()) {
-        if (checked++ > 500) break;
-        const text = walker.currentNode?.nodeValue || "";
-        if (!/https?:\/\//i.test(text)) continue;
-        (text.match(urlRegex) || []).slice(0, 50).forEach(url => addFinding(result, classifyLink(url)));
+        if (++nodes > MAX_SCAN_NODES) {
+          result.partial = true;
+          break;
+        }
+        const node = walker.currentNode;
+        if (node.nodeType === 3) scanText(node);
+        else scanElement(node);
+        if (urls > MAX_SCAN_URLS) break;
       }
-    } catch (_) {}
-
-    return normalize(result);
+    } catch (_) {
+      result.partial = true;
+    }
+    return mergeResults([result]);
   }
 
   function scanHtml(html, options = {}) {
-    if (!html) return { suspicious: [], externals: [], links: [] };
+    if (!html) return emptyResult();
     try {
       const parser = new DOMParser();
       return scanDocument(parser.parseFromString(html, "text/html"), options);
     } catch (_) {
-      return { suspicious: [], externals: [], links: [] };
+      return emptyResult(true);
     }
   }
 
-  function normalize(result) {
-    const confidenceRank = { high: 0, medium: 1, low: 2 };
-    const dedupe = arr => {
-      const seen = new Set();
-      return arr
-        .filter(item => item?.url && (seen.has(item.url) ? false : (seen.add(item.url), true)))
-        .sort((a, b) => (confidenceRank[a.confidence] ?? 9) - (confidenceRank[b.confidence] ?? 9));
-    };
-    return {
-      suspicious: dedupe(result.suspicious),
-      externals: dedupe(result.externals),
-      links: dedupe(result.links)
-    };
+  function mergeResults(results) {
+    const severity = {"tracking-pixel": 3, "suspicious-image": 2, "external-image": 1, "tracking-link": 1};
+    const confidence = {high: 3, medium: 2, low: 1};
+    const images = new Map(), links = new Map();
+    const merged = emptyResult();
+    for (const result of results) {
+      if (result.partial) merged.partial = true;
+      for (const group of [result.suspicious, result.externals, result.links]) {
+        for (const item of group) {
+          const items = item.classification === "tracking-link" ? links : images;
+          const previous = items.get(item.url);
+          if (!previous || severity[item.classification] > severity[previous.classification] ||
+              (item.classification === previous.classification && confidence[item.confidence] > confidence[previous.confidence])) {
+            items.set(item.url, item);
+          }
+        }
+      }
+    }
+    for (const item of images.values()) addFinding(merged, item);
+    merged.links = [...links.values()];
+    for (const group of [merged.suspicious, merged.externals, merged.links]) {
+      group.sort((a, b) => confidence[b.confidence] - confidence[a.confidence]);
+    }
+    return merged;
   }
 
   root.PixelGuardScanner = {
     classifyImage,
     classifyLink,
+    mergeResults,
     scanDocument,
     scanHtml,
     rules: {

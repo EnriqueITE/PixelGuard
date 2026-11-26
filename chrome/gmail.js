@@ -75,7 +75,7 @@
     const info = button("");
     info.className = "pg-partial-info";
     info.setAttribute("aria-label", t("gmailPartialInfo"));
-    const tip = element("span", "pg-partial-tip", t("gmailPartialExplanation"));
+    const tip = element("span", "pg-partial-tip");
     tip.hidden = true;
     tip.id = "pixelguard-tip-" + crypto.randomUUID();
     tip.setAttribute("role", "tooltip");
@@ -159,9 +159,11 @@
     return state;
   }
 
-  function setPartialHelp(state, visible) {
-    state.partialHelp.hidden = !visible;
-    if (!visible) state.partialHelp.querySelector(".pg-partial-tip").hidden = true;
+  function setPartialHelp(state, explanation) {
+    const tip = state.partialHelp.querySelector(".pg-partial-tip");
+    state.partialHelp.hidden = !explanation;
+    if (!explanation) tip.hidden = true;
+    else if (tip.textContent !== explanation) tip.textContent = explanation;
   }
 
   function setExpandable(state, expandable) {
@@ -279,13 +281,15 @@
     if (pages > 1) range.textContent = t("gmailRange", String(start + 1), String(Math.min(start + pageSize, entries.length)), String(entries.length));
   }
 
-  function render(state, body, result, originalLabels, partial = false) {
+  function render(state, body, result, original) {
+    const onlyVisible = Boolean(body && !original);
+    const partial = onlyVisible || result.partial;
     const items = [...result.suspicious, ...result.links, ...result.externals];
     const counts = new Map();
     for (const item of items) counts.set(item.classification, (counts.get(item.classification) || 0) + 1);
     // With images disabled Gmail may preserve the img and strip its source.
     const sources = ["src", "srcset", "data-src", "data-srcset", "data-original", "data-lazy", "data-lazy-src", "data-url"];
-    const unavailable = partial ? [...body.querySelectorAll("img")].filter(img =>
+    const unavailable = body && (!original || original.result.partial) ? [...body.querySelectorAll("img")].filter(img =>
       !sources.some(attr => img.getAttribute(attr)?.trim())) : [];
     const missing = unavailable.length;
     const hasEntries = items.length + missing > 0;
@@ -305,9 +309,11 @@
       totals.push(total);
     }
     state.summary.dataset.category = totals[0]?.dataset.category || (missing ? "unavailable-image" : "");
-    setPartialHelp(state, partial);
+    setPartialHelp(state, partial && t(onlyVisible ? "gmailPartialExplanation" : "gmailPartialCoverage"));
     if (partial) totals.push(t("gmailPartial"));
-    else if (!result.suspicious.length && !result.links.length) totals.unshift(t("gmailNoSignals"));
+    else if (!result.suspicious.length && !result.links.length) {
+      totals.unshift(t(!body && original?.plainText ? "gmailPlainSource" : "gmailNoSignals"));
+    }
     state.status.replaceChildren(...totals.flatMap((total, index) => index ? [" · ", total] : [total]));
     for (const option of state.filter.options) {
       const count = option.value === "all" ? items.length + missing : counts.get(option.value) || 0;
@@ -316,14 +322,24 @@
       option.hidden = option.value === "unavailable-image" && !missing && !option.selected;
     }
     state.filter.hidden = !hasEntries;
-    const labels = originalLabels || new Map();
-    if (!originalLabels) {
+    const labels = new Map(original?.labels);
+    const unlabeled = new Set(items.filter(item => !labels.has(item.url)).map(item => item.url));
+    if (body && unlabeled.size) {
       for (const a of body.querySelectorAll("a[href]")) {
+        const href = a.getAttribute("href");
+        if (!unlabeled.has(href)) continue;
         const label = anchorLabel(a);
-        if (label) labels.set(a.getAttribute("href"), label);
+        if (label) {
+          labels.set(href, label);
+          unlabeled.delete(href);
+        }
       }
       for (const img of body.querySelectorAll("img[src][alt]")) {
-        if (img.alt.trim()) labels.set(originalImage(img.getAttribute("src")), img.alt.trim().slice(0, 180));
+        const src = originalImage(img.getAttribute("src"));
+        if (unlabeled.has(src) && img.alt.trim()) {
+          labels.set(src, img.alt.trim().slice(0, 180));
+          unlabeled.delete(src);
+        }
       }
     }
     state.entries = items.map(item => {
@@ -366,9 +382,9 @@
       const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
       const text = [];
       while (walker.nextNode()) text.push(walker.currentNode.nodeValue);
-      parts.push({contentType: "text/html", body: {hrefs, text: text.join("\n")}});
+      parts.push({hrefs, text: text.join("\n")});
     }
-    const inventory = PixelGuardVTInventory.collectLinks({parts}, parsed => parsed);
+    const inventory = PixelGuardVTInventory.collectLinks(parts);
     return {links: inventory.links.map(({url}) => ({url, label: labels.get(url) || ""})), truncated: inventory.truncated};
   }
 
@@ -391,8 +407,7 @@
     originalButton.hidden = !entry.failed;
     originalButton.disabled = entry.retryState === "pending";
     let text = "";
-    if (entry.plainText) text = t("gmailPlainSource");
-    else if (entry.retryState === "failed") text = t("gmailFullScanFailed");
+    if (entry.retryState === "failed") text = t("gmailFullScanFailed");
     else if (missing) text = missing === 1 ? t("gmailUnavailableImageAddress") : t("gmailUnavailableImages", String(missing));
     else if (entry.failed) text = t("gmailOriginalFailed");
     originalBar.hidden = !text;
@@ -408,6 +423,10 @@
     refresh();
   }
 
+  function combineWithOriginal(visible, original) {
+    return original ? PixelGuardScanner.mergeResults([original.result, visible]) : visible;
+  }
+
   async function analyzeOriginal(body, entry) {
     const request = new AbortController();
     const retry = entry.retryState === "pending";
@@ -415,22 +434,20 @@
     entry.request = request;
     const timeout = setTimeout(() => request.abort(), 20000);
     try {
-      const html = await PixelGuardGmailOriginal.read(entry.id, request.signal, body, contextActive);
+      const source = await PixelGuardGmailOriginal.read(entry.id, request.signal, body, contextActive);
       request.signal.throwIfAborted();
       if (!contextActive() || !body.isConnected || messages.get(body) !== entry ||
           PixelGuardGmailOriginal.messageId(body) !== entry.id) return;
-      entry.original = PixelGuardOriginalScan.scan(html, entry.senderDomain);
+      entry.original = PixelGuardOriginalScan.scan(source, entry.senderDomain);
+      entry.result = combineWithOriginal(entry.result, entry.original);
       entry.failed = false;
       if (entry.view && (retry || entry.view.filter.value === "unavailable-image")) {
         entry.view.filter.value = "all";
         entry.view.page = 0;
       }
-      dirty.add(body);
-    } catch (error) {
+    } catch {
       if (!contextActive() || messages.get(body) !== entry) return;
-      entry.plainText = error?.name === "PlainTextOriginal";
-      entry.failed = !entry.plainText;
-      dirty.add(body);
+      entry.failed = true;
     } finally {
       clearTimeout(timeout);
       entry.request = null;
@@ -453,11 +470,9 @@
       originalPageRecord?.view?.panel.remove();
       originalPageRecord = {node: raw};
       try {
-        const html = PixelGuardOriginalMime.html(raw.textContent);
-        originalPageRecord.scan = PixelGuardOriginalScan.scan(html);
-      } catch (error) {
-        originalPageRecord.plainText = error.name === "PlainTextOriginal";
-      }
+        const source = PixelGuardOriginalMime.bodyParts(raw.textContent);
+        originalPageRecord.scan = PixelGuardOriginalScan.scan(source);
+      } catch { /* The original view reports unsupported input below. */ }
     }
     const record = originalPageRecord;
     const result = record.scan?.result;
@@ -465,9 +480,9 @@
     if (showPanel && !record.view) {
       const view = createPanel();
       if (result) {
-        render(view, null, result, record.scan.labels);
+        render(view, null, result, record.scan);
       } else {
-        view.status.textContent = t(record.plainText ? "gmailPlainSource" : "gmailOriginalUnsupported");
+        view.status.textContent = t("gmailOriginalUnsupported");
         view.filter.hidden = view.footer.hidden = view.empty.hidden = true;
       }
       raw.before(view.panel);
@@ -503,12 +518,13 @@
         messages.set(body, entry);
       }
       const updated = !entry.result || dirty.has(body) || entry.senderDomain !== senderDomain;
-      if (updated && !entry.original) {
-        entry.result = PixelGuardScanner.scanDocument(body, {senderDomain, resolveImageUrl: originalImage});
+      if (updated) {
+        const visibleResult = PixelGuardScanner.scanDocument(body, {senderDomain, resolveImageUrl: originalImage});
+        entry.result = combineWithOriginal(visibleResult, entry.original);
         entry.senderDomain = senderDomain;
       }
-      const result = entry.original?.result || entry.result;
-      const scanning = !!id && !entry.original && !entry.plainText && (!entry.failed || entry.retryState === "pending");
+      const result = entry.result;
+      const scanning = !!id && !entry.original && (!entry.failed || entry.retryState === "pending");
       if (scanning) tabScanning = true;
       suspicious += result.suspicious.length;
       externals += result.externals.length;
@@ -528,7 +544,7 @@
             const label = t("gmailFullScanRunning");
             if (view.status.textContent !== label) view.status.textContent = label;
           } else {
-            render(view, body, result, entry.original?.labels, !entry.original && !entry.plainText);
+            render(view, body, result, entry.original);
           }
           view.panel.toggleAttribute("data-scanning", scanning);
           originalControls(entry);
@@ -550,7 +566,7 @@
     if (document.hidden) return;
     for (const [body, entry] of messages) {
       if (activeOriginalReads >= maxOriginalReads) break;
-      if (entry.id && !entry.request && !entry.original && !entry.plainText &&
+      if (entry.id && !entry.request && !entry.original &&
           (!entry.failed || entry.retryState === "pending")) {
         analyzeOriginal(body, entry);
       }

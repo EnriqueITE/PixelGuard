@@ -79,7 +79,7 @@ function harness(shared = { data: {} }) {
       return { ok: true, status: 200, json: async () => ({ data: { url: report, detection_ratio: { detections: 1, total: 80 } } }) };
     },
     importScripts: (...names) => names.forEach(name => {
-      const filename = path.join(root, name === 'virustotal/inventory.js' ? '' : 'chrome', name);
+      const filename = path.join(root, 'chrome', name);
       vm.runInContext(fs.readFileSync(filename, 'utf8'), context);
       if (name === 'vault.js') {
         // Web Crypto and locks are real. A shared store stands in for IndexedDB

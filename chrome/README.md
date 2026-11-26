@@ -18,13 +18,13 @@ El escudo y la barra toman el color del indicio de mayor prioridad. Un posible p
 
 Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el análisis completo. Usa la cuenta y el identificador del mensaje para pedir el original a Gmail. Durante la lectura, la barra muestra **Analizando el mensaje** y el escudo muestra **…**. Una línea recorre la barra mientras dura el análisis. Si has activado la preferencia de movimiento reducido, la línea permanece quieta. El análisis también funciona con la barra oculta.
 
-PixelGuard lee el HTML original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. Al terminar, el panel y el escudo muestran el resultado del original.
+PixelGuard lee el original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. El panel y el escudo combinan los hallazgos del original con los de la vista de Gmail. Cada imagen conserva su clasificación de mayor prioridad.
 
 Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si PixelGuard solo ha podido examinar parte del mensaje, la barra conserva los hallazgos y muestra **Análisis parcial**. Pasa el puntero por el icono de información o enfócalo con el teclado para saber qué ha quedado sin comprobar. Si falla la lectura del original, puedes volver a pedirlo con **Reintentar análisis**.
 
-El análisis automático de seguimiento admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB. Examina el cuerpo del correo y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
+El análisis automático admite originales de hasta 8 MiB y revisa hasta 2 MiB de contenido entre las partes de texto y HTML. En un correo con varias partes en línea, examina cada una y elige la versión preferida cuando son alternativas del mismo contenido. Excluye los adjuntos y los mensajes reenviados como archivo. Si alcanza un límite de análisis, la barra indica **Análisis parcial**. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
-El detector se activa en `https://mail.google.com/mail/*`. El análisis del mensaje es local y respeta la elección de imágenes de Gmail. El [detector de Gmail](scanner.js) parte del de Thunderbird y reconoce las direcciones del proxy de imágenes de Gmail. La compilación reutiliza los iconos de PixelGuard, las traducciones de los indicios y las funciones de inventario de enlaces que ya están en la raíz.
+El detector se activa en `https://mail.google.com/mail/*`. El análisis del mensaje es local y respeta la elección de imágenes de Gmail. El [detector de Gmail](scanner.js) reconoce las direcciones del proxy de imágenes de Gmail. La compilación reutiliza los iconos de PixelGuard y las traducciones de los indicios que están en la raíz.
 
 ## Ajustes y VirusTotal
 

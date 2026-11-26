@@ -1,7 +1,14 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 require('../original-mime.js');
-const { html, attachment } = globalThis.PixelGuardOriginalMime;
+const { bodyParts, attachment } = globalThis.PixelGuardOriginalMime;
+const html = raw => {
+  const result = bodyParts(raw);
+  assert.equal(result.partial, false);
+  assert.equal(result.parts.length, 1);
+  assert.equal(result.parts[0].type, 'text/html');
+  return result.parts[0].content;
+};
 
 const part = (headers, content) => headers + '\r\n\r\n' + content;
 function multipart(subtype, boundary, children, extra = '') {
@@ -35,6 +42,10 @@ test('finds the preferred HTML alternative in mixed and related bodies, skipping
     related
   ]);
   assert.equal(html(source), markup);
+  const emptyPreferred = multipart('alternative', 'alt', [
+    part('Content-Type: text/html', markup), part('Content-Type: text/html', '  ')
+  ]);
+  assert.equal(html(emptyPreferred), markup);
 });
 
 test('distinguishes already-decoded Gmail text from undecoded EML bytes', () => {
@@ -45,16 +56,59 @@ test('distinguishes already-decoded Gmail text from undecoded EML bytes', () => 
   assert.equal(html(Buffer.from(part('Content-Type: text/html; charset=UTF-8', '<p>☃</p>'))), '<p>☃</p>');
 });
 
-test('does not scan related resources, attachment filenames or forwarded mail for a missing body', () => {
+test('returns only displayable bodies, excluding related resources, attachments and forwarded mail', () => {
   const markup = part('Content-Type: text/html', '<p>Other document</p>');
   const plain = part('Content-Type: text/plain', 'Body text');
   for (const source of [
     plain,
     multipart('related', 'r', [plain, markup]),
-    multipart('related', 'r', [markup], '; start="<missing>"'),
     multipart('mixed', 'm', [plain, part('Content-Type: message/rfc822', markup)]),
     multipart('mixed', 'm', [plain, part("Content-Type: text/html\r\nContent-Disposition: inline; filename*0*=utf-8''file", 'Named attachment')])
-  ]) assert.throws(() => html(source), /no HTML body/);
+  ]) assert.deepEqual(bodyParts(source), {parts: [{type: 'text/plain', content: 'Body text'}], partial: false});
+  assert.throws(() => bodyParts(multipart('related', 'r', [markup], '; start="<missing>"')), /Missing MIME body/);
+});
+
+test('scans mixed inline siblings, a single chosen alternative, and only the signed body', () => {
+  const asHtml = content => part('Content-Type: text/html', content);
+  const plain = part('Content-Type: text/plain', 'A link in plain text');
+  const source = multipart('mixed', 'root', [
+    asHtml('<p>First</p>'),
+    multipart('alternative', 'alt', [plain, asHtml('<p>Alternative</p>')]),
+    plain,
+    multipart('signed', 'signature', [asHtml('<p>Signed</p>'), asHtml('<p>Signature data</p>')]),
+    asHtml('<p>Last</p>')
+  ]);
+  assert.deepEqual(bodyParts(source), {parts: [
+    {type: 'text/html', content: '<p>First</p>'}, {type: 'text/html', content: '<p>Alternative</p>'},
+    {type: 'text/plain', content: 'A link in plain text'}, {type: 'text/html', content: '<p>Signed</p>'},
+    {type: 'text/html', content: '<p>Last</p>'}
+  ], partial: false});
+});
+
+test('preserves readable parts and signals gaps in mixed originals', () => {
+  const first = part('Content-Type: text/html', 'First');
+  const last = part('Content-Type: text/html', 'Last');
+  for (const unreadable of [
+    part('Content-Type: text/html\r\nContent-Transfer-Encoding: unknown', 'Unrecognized'),
+    part('Content-Type: multipart/encrypted; boundary=e', 'Encrypted message'),
+    part('Content-Type: text/html', 'x'.repeat(2 * 1024 * 1024 - 2)),
+    'Missing header separator', 'Malformed header\r\n\r\nContent'
+  ]) {
+    assert.deepEqual(bodyParts(multipart('mixed', 'b', [first, unreadable, last])), {
+      parts: [{type: 'text/html', content: 'First'}, {type: 'text/html', content: 'Last'}], partial: true
+    });
+  }
+});
+
+test('retains the checked mixed prefix at the part limit without guessing a rendition or an attachment', () => {
+  const first = part('Content-Type: text/html', '<p>First section</p>');
+  const file = part('Content-Disposition: attachment; filename="sample.txt"', 'Example');
+  const children = [first, ...Array(256).fill(file)];
+  const mixed = multipart('mixed', 'mix', children);
+  assert.deepEqual(bodyParts(mixed), {parts: [{type: 'text/html', content: '<p>First section</p>'}], partial: true});
+  assert.throws(() => bodyParts(multipart('alternative', 'alt', children)), /Too many MIME parts/);
+  assert.throws(() => bodyParts(multipart('related', 'related', children)), /Too many MIME parts/);
+  assert.throws(() => attachment(mixed, {name: 'sample.txt', partId: '0.1'}, 100), /Too many MIME parts/);
 });
 
 test('rejects truncated, undecodable and oversized originals', () => {
@@ -68,10 +122,10 @@ test('rejects truncated, undecodable and oversized originals', () => {
 
 test('recognizes a plain-text original without treating attachments or malformed data as the message body', () => {
   const plain = part('From: sender@example.test', 'See https://example.test');
-  assert.throws(() => html(plain), { name: 'PlainTextOriginal' });
+  assert.deepEqual(bodyParts(plain), {parts: [{type: 'text/plain', content: 'See https://example.test'}], partial: false});
   const attached = part('Content-Type: text/plain\r\nContent-Disposition: attachment', 'Attached text');
-  assert.throws(() => html(multipart('mixed', 'm', [attached])), { name: 'Error' });
-  assert.throws(() => html('invalid headers\n\nresponse'), { name: 'Error' });
+  assert.throws(() => bodyParts(multipart('mixed', 'm', [attached])), /no displayable text body/);
+  assert.throws(() => bodyParts('invalid headers\n\nresponse'), /Invalid MIME headers/);
 });
 
 test('selects the exact MIME part for duplicate filenames and skips attached messages', () => {

@@ -124,9 +124,27 @@ async function run() {
     const darkMode = page.getByRole("switch", { name: "Modo oscuro", exact: true });
     await page.getByRole("switch", { name: "Modo oscuro", checked: false, disabled: false }).waitFor();
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(255, 255, 255)");
+    const coffeeUrl = "https://buymeacoffee.com/enriqueite";
+    const coffee = page.getByRole("contentinfo").getByRole("link", {name: "Invítame a un café", exact: true});
+    await coffee.waitFor();
+    assert.equal(await coffee.getAttribute("href"), coffeeUrl);
+    assert.equal(await coffee.getAttribute("rel"), "noopener noreferrer");
+    assert.deepEqual(outbound, [], "Opening the popup does not contact the support site");
+    let coffeeReferrer;
+    await page.context().route(coffeeUrl, route => {
+      coffeeReferrer = route.request().headers().referer || "";
+      return route.fulfill({contentType: "text/html", body: "<title>Support fixture</title>"});
+    });
+    const [supportPage] = await Promise.all([page.context().waitForEvent("page"), coffee.click()]);
+    await supportPage.waitForURL(coffeeUrl);
+    assert.equal(await supportPage.title(), "Support fixture");
+    assert.equal(await supportPage.evaluate(() => window.opener === null), true);
+    assert.equal(coffeeReferrer, "");
+    await supportPage.close();
     await darkMode.click();
     await page.getByRole("switch", { name: "Modo oscuro", checked: true, disabled: false }).waitFor();
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(23, 35, 40)");
+    assert.equal(await coffee.evaluate(link => getComputedStyle(link).color), "rgb(118, 221, 187)");
     assert.deepEqual(await page.evaluate(() => testState.settings.at(-1).fields), ["type", "theme"]);
     await darkMode.press("Space");
     await page.getByRole("switch", { name: "Modo oscuro", checked: false, disabled: false }).waitFor();

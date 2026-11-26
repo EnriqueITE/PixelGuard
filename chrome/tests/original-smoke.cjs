@@ -265,7 +265,13 @@ async function main() {
     assert.doesNotMatch(await summary.innerText(), /partial scan/i);
     assert.equal(await partialInfo.count(), 0, 'A successful retry clears the partial-scan help');
     assert.equal(await retry.count(), 0);
-    await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    assert.match(await summary.innerText(), /2 links with tracking indicators/,
+      'Completing the scan keeps the link found only in the visible message');
+    await panel.locator('.pg-filter').selectOption('tracking-link');
+    assert.deepEqual((await panel.locator('.pg-url').allInnerTexts()).sort(),
+      [click, 'https://click.example.test/redirect'].sort());
+    await panel.getByText('Second link', {exact: true}).waitFor();
+    await waitForBadge(worker, tabId, '112', [229, 57, 53, 255]);
     assert.equal(requestsFor(secondId).length, secondRequestsBeforeRetry + 1);
     assert.equal(page.url(), initialUrl);
     assert.equal(await page.locator('#message-options').getAttribute('aria-expanded'), 'false');
@@ -306,7 +312,7 @@ async function main() {
       el.dataset.legacyMessageId = id;
       el.dataset.messageId = '#msg-f:' + BigInt('0x' + id);
     }, {id: hintedId, hint: syntheticHint});
-    await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    await waitForBadge(worker, tabId, '112', [229, 57, 53, 255]);
     assert.equal(await panel.getAttribute('open'), null, 'Completing the scan did not require opening the panel');
     assert.equal(await retry.count(), 0);
     assert.match(await summary.innerText(), /1 possible tracking pixel/);
@@ -326,6 +332,41 @@ async function main() {
     assert.equal(page.url(), initialUrl);
     assert.equal(await page.locator('#message-menu').isVisible(), false);
     await page.evaluate(() => { delete window.GLOBALS; });
+
+    // An opaque image address in Gmail cannot be correlated with an image from the original.
+    const proxy = 'https://ci3.googleusercontent.com/proxy/test-placeholder';
+    const proxyId = (BigInt('0x' + hintedId) + 1n).toString(16);
+    const proxyRequest = nextRoute(proxyId);
+    await page.locator('.adn').evaluate((el, {id, url}) => {
+      el.dataset.legacyMessageId = id;
+      el.dataset.messageId = '#msg-f:' + BigInt('0x' + id);
+      const img = document.createElement('img');
+      img.dataset.src = url;
+      el.querySelector('.a3s').replaceChildren(img);
+    }, {id: proxyId, url: proxy});
+    await (await proxyRequest).fulfill({contentType: 'message/rfc822', body: 'Content-Type: text/plain\r\n\r\nHello'});
+    await waitForBadge(worker, tabId, '010', [0, 191, 165, 255]);
+    await summary.click();
+    assert.equal(await panel.locator('.pg-url').innerText(), proxy);
+
+    const partialId = (BigInt('0x' + proxyId) + 1n).toString(16);
+    const partialRequest = nextRoute(partialId);
+    await page.locator('.adn').evaluate((el, id) => {
+      el.dataset.legacyMessageId = id;
+      el.dataset.messageId = '#msg-f:' + BigInt('0x' + id);
+      el.querySelector('.a3s').innerHTML = '<img alt="Image blocked in Gmail">';
+    }, partialId);
+    const partlyReadable = [
+      'Content-Type: multipart/mixed; boundary=parts', '',
+      '--parts', 'Content-Type: text/plain', '', 'First section',
+      '--parts', 'Content-Type: text/html', 'Content-Transfer-Encoding: unsupported', '', 'Unreadable section',
+      '--parts--'
+    ].join('\r\n');
+    await (await partialRequest).fulfill({contentType: 'message/rfc822', body: partlyReadable});
+    await summary.getByText('Partial scan', {exact: true}).waitFor();
+    await summary.click();
+    await panel.locator('li[data-category="unavailable-image"]').getByText('Image blocked in Gmail').waitFor();
+    assert.doesNotMatch(await summary.innerText(), /no tracking indicators/i);
     const requestsBeforeThread = sourceRequests.length;
 
     // Three messages expand together; the third collapses while the first two
@@ -356,6 +397,26 @@ async function main() {
     await panel.locator('summary').click();
     assert.equal(await pixelRow.locator('.pg-url').innerText(), pixel);
     await waitForBadge(worker, tabId, '111', [229, 57, 53, 255]);
+    const originalNode = page.locator('pre.raw_message_text');
+    const mixed = [
+      'Content-Type: multipart/mixed; boundary="message-sections"', '',
+      '--message-sections', 'Content-Type: text/html', '', '<p>Newsletter introduction</p>',
+      '--message-sections', 'Content-Type: text/html', '', '<img src="' + pixel + '" width="1" height="1">',
+      '--message-sections--'
+    ].join('\r\n');
+    await originalNode.evaluate((node, source) => { node.textContent = source; }, mixed);
+    await summary.getByText('1 possible tracking pixel', {exact: true}).waitFor();
+    await waitForBadge(worker, tabId, '100', [229, 57, 53, 255]);
+    assert.equal(await partialInfo.count(), 0, 'Both inline sections of the original were covered');
+
+    const longNewsletter = '<p>Newsletter section</p>'.repeat(600);
+    await originalNode.evaluate((node, body) => { node.textContent = 'Content-Type: text/html\r\n\r\n' + body; }, longNewsletter);
+    await summary.getByText('Partial scan', {exact: true}).waitFor();
+    assert.doesNotMatch(await summary.innerText(), /no tracking indicators/i);
+    await partialInfo.hover();
+    await panel.getByRole('tooltip').waitFor();
+    assert.match(await panel.getByRole('tooltip').innerText(), /only check part of this message/i);
+
     for (const [type, body, expected] of [
       ['text/html', '<p>A clean message</p>', 'No tracking indicators found'],
       ['text/plain', 'A plain message', 'Plain-text original']

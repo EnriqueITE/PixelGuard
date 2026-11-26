@@ -1,7 +1,7 @@
-// Extract the displayed HTML body as text. Nothing in the message is rendered.
+// Extract displayable message bodies as data. Nothing in the message is rendered.
 (() => {
   const MAX_SOURCE = 8 * 1024 * 1024;
-  const MAX_HTML = 2 * 1024 * 1024;
+  const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
   function binaryString(bytes) {
     let result = '';
@@ -39,27 +39,26 @@
       body: raw.slice(separator.index + separator[0].length) };
   }
 
-  function childrenOf(part, budget) {
+  function* childrenOf(part, budget, parseChild = raw => /^\r?\n/.test(raw) ? null : entity(raw)) {
     const boundary = part.content.params.get('boundary');
     if (!boundary || boundary.length > 70 || /[^\x20-\x7e]/.test(boundary)) throw Error('Invalid MIME boundary');
     const escaped = boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const delimiter = new RegExp('^--' + escaped + '(--)?[ \\t]*(?:\\r?\\n|$)', 'gm');
-    const children = [];
     let start = -1;
     for (const line of part.body.matchAll(delimiter)) {
       if (start >= 0) {
         if (++budget.parts > 256) throw Error('Too many MIME parts');
         // The line break immediately preceding the boundary belongs to the delimiter.
         const child = part.body.slice(start, line.index).replace(/\r?\n$/, '');
-        children.push(/^\r?\n/.test(child) ? null : entity(child));
+        yield parseChild(child);
       }
-      if (line[1]) return children;
+      if (line[1]) return;
       start = line.index + line[0].length;
     }
     throw Error('Incomplete MIME multipart');
   }
 
-  function decode(part, sourceIsBytes) {
+  function decode(part, sourceIsBytes, budget) {
     const encoding = (part.headers.get('content-transfer-encoding') || '7bit').toLowerCase();
     let octets = part.body;
     if (encoding === 'base64') {
@@ -73,52 +72,84 @@
     } else if (!['7bit', '8bit', 'binary'].includes(encoding)) {
       throw Error('Unsupported MIME encoding');
     }
-    if (octets.length > MAX_HTML) throw Error('HTML body too large');
+    if (octets.length > budget.remaining) throw Error('Message bodies too large');
     // Text copied from Gmail's original-view page is already Unicode. Raw EML
     // bytes and ASCII transfer encodings still need the part's charset.
-    if (!sourceIsBytes && encoding !== 'base64' && encoding !== 'quoted-printable') return octets;
-    const bytes = Uint8Array.from(octets, character => character.charCodeAt(0));
-    return new TextDecoder(part.content.params.get('charset') || 'utf-8').decode(bytes);
+    let text = octets;
+    if (sourceIsBytes || encoding === 'base64' || encoding === 'quoted-printable') {
+      const bytes = Uint8Array.from(octets, character => character.charCodeAt(0));
+      text = new TextDecoder(part.content.params.get('charset') || 'utf-8').decode(bytes);
+    }
+    budget.remaining -= octets.length;
+    return text;
   }
 
-  function html(raw) {
+  function bodyParts(raw) {
     const sourceIsBytes = raw instanceof Uint8Array;
     if (!(sourceIsBytes || typeof raw === 'string') || !raw.length || raw.length > MAX_SOURCE) {
       throw Error('Invalid original message size');
     }
     const source = (sourceIsBytes ? binaryString(raw) : raw).replace(/\r\n?/g, '\n');
-    const budget = { parts: 1 };
-    let foundPlainText = false;
+    const budget = { parts: 1, remaining: MAX_BODY_BYTES };
+    const parts = [];
+    let unreadable;
+    function parseChild(rawChild) {
+      // A MIME child without any headers has the default text/plain type.
+      try {
+        const child = entity(rawChild.startsWith('\n') ? 'Content-Type: text/plain\n' + rawChild : rawChild);
+        return child.headers.size ? child : null;
+      } catch { return null; }
+    }
     function select(part, depth) {
-      if (depth > 16) throw Error('MIME nesting too deep');
-      if (!part || part.attached) return null;
-      const { type, params } = part.content;
-      if (type === 'text/plain') foundPlainText = true;
-      if (type === 'text/html') return decode(part, sourceIsBytes);
-      if (!['multipart/mixed', 'multipart/related', 'multipart/alternative', 'multipart/signed'].includes(type)) return null;
-      const children = childrenOf(part, budget);
-      if (type === 'multipart/related') {
-        const id = params.get('start');
-        const root = id ? children.find(child => child?.headers.get('content-id') === id) : children[0];
-        return select(root, depth + 1);
+      try {
+        if (!part) throw Error('Missing MIME body');
+        if (part.attached || part.content.type === 'message/rfc822') return;
+        if (depth > 16) throw Error('MIME nesting too deep');
+        const {type, params} = part.content;
+        if (type === 'text/plain' || type === 'text/html') {
+          parts.push({type, content: decode(part, sourceIsBytes, budget)});
+          return;
+        }
+        if (!['multipart/mixed', 'multipart/related', 'multipart/alternative', 'multipart/signed'].includes(type)) {
+          if (/^(?:multipart\/|text\/|message\/|application\/(?:xhtml\+xml|(?:x-)?pkcs7-mime)$)/.test(type)) {
+            throw Error('Unsupported message body');
+          }
+          return;
+        }
+        const childParts = childrenOf(part, budget, parseChild);
+        if (type === 'multipart/mixed') {
+          // Every inline sibling is relevant. Keep each one as soon as its
+          // closing boundary is known, even if a later child exceeds a limit.
+          for (const child of childParts) select(child, depth + 1);
+          return;
+        }
+        // A rendition or related root must be selected from the proper group.
+        // Withhold that selection if the group could not be read to its end.
+        const children = [...childParts];
+        if (type === 'multipart/related') {
+          const id = params.get('start');
+          select(id ? children.find(child => child?.headers.get('content-id') === id) : children[0], depth + 1);
+        } else if (type === 'multipart/signed') {
+          select(children[0], depth + 1);
+        } else {
+          // Use a single readable rendition, preferring the last supported one.
+          const before = parts.length;
+          for (let i = children.length - 1; i >= 0; i--) {
+            select(children[i], depth + 1);
+            if (parts.slice(before).some(item => item.content.trim())) break;
+            if (i > 0) parts.length = before;
+          }
+        }
+      } catch (error) {
+        // Retain readable mixed siblings and carry the gap through to the UI.
+        unreadable ??= error;
       }
-      if (type === 'multipart/signed') return select(children[0], depth + 1);
-      // In an alternative, the sender puts the preferred rendition last.
-      if (type === 'multipart/alternative') children.reverse();
-      for (const child of children) {
-        const body = select(child, depth + 1);
-        if (body?.trim()) return body;
-      }
-      return null;
     }
     const root = entity(source);
-    const result = select(root, 0);
-    if (!result?.trim()) {
-      const error = Error('Original has no HTML body');
-      if (foundPlainText && root.headers.size) error.name = 'PlainTextOriginal';
-      throw error;
-    }
-    return result;
+    if (!root.headers.size) throw Error('Invalid MIME headers');
+    select(root, 0);
+    if (!parts.length) throw unreadable || Error('Original has no displayable text body');
+    return {parts, partial: !!unreadable};
   }
 
   function mimeName(params, key, sourceIsBytes) {
@@ -171,7 +202,8 @@
         return;
       }
       if (part.content.type.startsWith('multipart/')) {
-        childrenOf(part, budget).forEach((child, i) => visit(child, path + '.' + i, depth + 1));
+        let index = 0;
+        for (const child of childrenOf(part, budget)) visit(child, path + '.' + index++, depth + 1);
       }
     }
     visit(entity(source), '0', 0);
@@ -202,5 +234,5 @@
     return result;
   }
 
-  globalThis.PixelGuardOriginalMime = { html, attachment };
+  globalThis.PixelGuardOriginalMime = { bodyParts, attachment };
 })();

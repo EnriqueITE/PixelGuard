@@ -15,7 +15,7 @@ async function main() {
       return route.abort();
     });
     const chromeDir = path.resolve(__dirname, '..');
-    for (const file of ['scanner.js', 'original-scan.js']) {
+    for (const file of ['original-mime.js', 'scanner.js', 'original-scan.js']) {
       await page.addScriptTag({path: path.join(chromeDir, file)});
     }
     const actual = await page.evaluate(() => {
@@ -45,6 +45,21 @@ async function main() {
     assert.equal(actual.labels[actual.links[0]], 'A product');
     assert.equal(actual.labels[actual.externals[0]], 'Company logo');
 
+    const mixed = await page.evaluate(() => {
+      const source = [
+        'Content-Type: multipart/mixed; boundary=parts', '',
+        '--parts', 'Content-Type: text/html', '', '<div><textarea>First note',
+        '--parts', 'Content-Type: text/html', '', '<img src="https://images.example.test/pixel" width="1" height="1">',
+        '--parts', 'Content-Type: text/plain', '', 'https://click.example.test/redirect <img src="https://images.example.test/text">',
+        '--parts', 'Content-Type: multipart/encrypted', '', 'Unavailable section', '--parts--'
+      ].join('\r\n');
+      const {result, plainText} = PixelGuardOriginalScan.scan(PixelGuardOriginalMime.bodyParts(source));
+      return {pixels: result.suspicious.map(item => item.url), links: result.links.map(item => item.url),
+        images: result.externals.length, partial: result.partial, plainText};
+    });
+    assert.deepEqual(mixed, {pixels: ['https://images.example.test/pixel'], links: ['https://click.example.test/redirect'],
+      images: 0, partial: true, plainText: false});
+
     const sourcePage = '<pre class="raw_message_text">Content-Type: text/html; charset=UTF-8\n\n' +
       '&lt;img width="1" height="1" src="https://example.test/open"&gt;</pre>';
     let nativePage = '<!doctype html><img src="https://example.test/in-page">' +
@@ -62,7 +77,7 @@ async function main() {
       await page.addScriptTag({path: path.join(chromeDir, file)});
     }
     const read = () => page.evaluate(() => PixelGuardGmailOriginal.read('abcd'));
-    assert.equal(await read(), '<img width="1" height="1" src="https://example.test/open">');
+    assert.deepEqual(await read(), {parts: [{type: 'text/html', content: '<img width="1" height="1" src="https://example.test/open">'}], partial: false});
     for (const invalidPage of ['<html>Sign in</html>', sourcePage + sourcePage]) {
       nativePage = invalidPage;
       await assert.rejects(read(), /Gmail original unavailable/);

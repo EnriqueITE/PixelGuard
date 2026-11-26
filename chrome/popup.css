@@ -83,4 +83,5 @@ input[type=password] { width: 100%; min-width: 0; font-size: 13px; }
 #result, #status { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
 #status[data-error="true"] { color: var(--danger); }
 a { color: var(--accent); }
+footer { border-top: 1px solid var(--line); padding: 10px 18px; text-align: center; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
