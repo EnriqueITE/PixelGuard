@@ -29,11 +29,11 @@ h2, .setting > label { font-size: 14px; font-weight: 650; }
 section { border-top: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 12px; }
 button, input { font: inherit; }
-button, input[type=password], input[type=file]::file-selector-button {
+button, input[type=password] {
   border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; color: var(--text); background: var(--surface);
 }
-button, input[type=file]::file-selector-button { cursor: pointer; font-weight: 600; font-size: 12px; }
-button:hover:enabled, summary:hover, input[type=file]::file-selector-button:hover { background: var(--soft); }
+button { cursor: pointer; font-weight: 600; font-size: 12px; }
+button:hover:enabled { background: var(--soft); }
 button:disabled { opacity: .52; cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .primary, .primary:hover:enabled { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
@@ -51,15 +51,10 @@ form, .work { display: grid; gap: 9px; }
 form { background: var(--soft); border-radius: 8px; padding: 12px; margin-bottom: 9px; }
 form label, .work label { font-size: 12px; font-weight: 650; display: block; }
 form .text-btn { justify-self: start; }
-input[type=password], input[type=file] { width: 100%; min-width: 0; font-size: 13px; }
-input[type=file]::file-selector-button { margin-right: 8px; }
+input[type=password] { width: 100%; min-width: 0; font-size: 13px; }
 .buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
-details { border-top: 1px solid var(--line); }
-summary { cursor: pointer; color: var(--accent); font-weight: 650; padding: 10px 2px; }
-.mode { display: flex; align-items: center; border-bottom: 1px solid var(--line); gap: 9px; }
-.mode button { background: transparent; border: 0; border-radius: 0; color: var(--muted); padding: 4px 2px 6px; border-bottom: 2px solid transparent; }
-.mode [aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
+#lookup, #file-fields { padding-top: 10px; border-top: 1px solid var(--line); }
 #link-fields, #file-fields, #confirmation, #result { display: grid; gap: 7px; min-width: 0; }
 #url-picker { min-width: 0; font-size: 13px; }
 #url-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
@@ -75,8 +70,11 @@ summary { cursor: pointer; color: var(--accent); font-weight: 650; padding: 10px
 .url-option { padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; }
 .url-option:hover, .url-option[aria-selected=true] { background: var(--soft); color: var(--accent); }
 #file-fields button { justify-self: start; }
-#attachment-picker, #local-file, #attachment-digest, #upload-confirmation { display: grid; gap: 6px; min-width: 0; }
-#attachments { width: 100%; padding: 6px 8px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }
+#attachment-picker, #attachment-digest, #upload-confirmation { display: grid; gap: 6px; min-width: 0; }
+#attachments { width: 100%; padding: 7px 10px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; text-overflow: ellipsis; }
+#attachments:disabled { color: var(--muted); }
+#choose-local-file { margin-inline-start: 3px; }
+#local-filename { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 #attachment-digest { margin-top: 4px; font-size: 12px; }
 #attachment-sha, #upload-file-name { overflow-wrap: anywhere; }
 #attachment-sha { user-select: all; }

@@ -51,7 +51,11 @@ async function run() {
               if (fixture.hold) await new Promise(resolve => { window.releaseRow = resolve; });
               return {url: fixture.url, attachment: fixture.attachment};
             }
-            if (type === "pg:gmail:attachments") return {attachments: fixture.attachments || []};
+            if (type === "pg:gmail:attachments") {
+              if (fixture.holdInventory) await new Promise(resolve => { window.releaseInventory = resolve; });
+              if (fixture.unavailable) throw new Error("Gmail content script unavailable");
+              return {attachments: fixture.attachments || []};
+            }
             if (type !== "pg:gmail:links") throw new Error("Unexpected Gmail message");
             test.inventory++;
             return { links: test.links };
@@ -154,9 +158,15 @@ async function run() {
     assert.equal(await q("vt-toggle").isChecked(), false);
     await page.evaluate(() => { testState.granted = true; });
     await q("vt-toggle").click();
-    await q("lookup").locator("summary").click();
+    await q("lookup").waitFor();
     const address = page.getByRole("combobox", { name: catalog.pgLinkAddress.message, exact: true });
+    const attachmentSelect = page.getByRole("combobox", {name: catalog.pgAttachments.message, exact: true});
+    const localFileButton = q("choose-local-file");
     const list = page.getByRole("listbox");
+    await attachmentSelect.locator("option").filter({hasText: catalog.pgNoAttachments.message}).waitFor({state: "attached"});
+    assert.ok(await attachmentSelect.isVisible());
+    assert.ok(await attachmentSelect.isDisabled());
+    assert.ok(await localFileButton.isVisible());
     assert.equal(await q("link-fields").locator("select:visible,textarea:visible,input:visible").count(), 1);
     await q("show-links").click();
     const longOption = list.getByRole("option", { name: sample, exact: true });
@@ -230,7 +240,6 @@ async function run() {
     assert.equal(await q("url").evaluate(node => node.title), "", "Disabling VirusTotal clears the selected URL hint");
     await page.evaluate(() => { testState.links = []; });
     await q("vt-toggle").click();
-    await q("lookup").locator("summary").click();
     await page.waitForFunction(() => testState.inventory === 2);
     const manual = "https://manual.example.test/path?item=42#details";
     await address.fill(manual);
@@ -261,12 +270,12 @@ async function run() {
 
     const rowImage = "https://pixel.example.test/open.gif?id=customer-42#image";
     let visit = 0;
-    async function openFromRow(fixture, hash = "") {
+    async function openWidget(fixture, hash = "") {
       await page.evaluate(fixture => sessionStorage.setItem("rowFixture", JSON.stringify(fixture)), fixture);
       await page.goto("https://popup.example.test/popup.html?visit=" + ++visit + hash);
     }
-    await openFromRow({url: rowImage, state: {hasKey: true, vtEnabled: true}}, "#tab=42");
-    await page.waitForFunction(() => document.querySelector("#lookup").open && testState.inventory === 1);
+    await openWidget({url: rowImage, state: {hasKey: true, vtEnabled: true}}, "#tab=42");
+    await page.waitForFunction(url => document.querySelector("#url").value === url, rowImage);
     assert.equal(await address.inputValue(), rowImage);
     assert.equal(await address.getAttribute("title"), rowImage);
     assert.equal(await picked.innerText(), rowImage);
@@ -274,10 +283,11 @@ async function run() {
     await list.getByRole("option", {name: rowImage, exact: true}).waitFor();
     await list.getByRole("option", {name: sample, exact: true}).click();
     assert.equal(await address.inputValue(), sample, "The row handoff keeps the regular link picker");
-    assert.deepEqual(await page.evaluate(() => testState.mail), [
-      {type: "pg:gmail:takeVtSelection", id: 42, frameId: 0},
-      {type: "pg:gmail:links", id: 42, frameId: 0}
-    ]);
+    const mailCalls = await page.evaluate(() => testState.mail);
+    assert.deepEqual(new Set(mailCalls.map(call => call.type)), new Set([
+      "pg:gmail:takeVtSelection", "pg:gmail:links", "pg:gmail:attachments"
+    ]));
+    assert.ok(mailCalls.every(call => call.id === 42 && call.frameId === 0));
     await q("preview-url").click();
     assert.equal(await q("exact-url").innerText(), sample);
     assert.deepEqual(await page.evaluate(() => testState.lookups), []);
@@ -289,21 +299,36 @@ async function run() {
     ];
     const hash = file => createHash("sha256").update(file.body).digest("hex");
     const secondHash = hash(attachments[1]);
-    await openFromRow({state: enabled, attachments}, "#tab=42");
-    await q("lookup").locator("summary").click();
-    await q("file-mode").click();
-    await q("attachments").waitFor();
-    assert.deepEqual(await q("attachments").locator("option").allTextContents(),
-      [catalog.pgPickLocalFile.message, "document.pdf (1)", "document.pdf (2)"]);
-    await q("attachments").selectOption("a2");
-    assert.deepEqual(await page.evaluate(() => testState.reads), [], "Choosing a file alone doesn't read or query it");
+    await openWidget({state: enabled, attachments, holdInventory: true});
+    await address.waitFor();
+    await attachmentSelect.waitFor();
+    assert.equal(await attachmentSelect.locator("option:checked").textContent(), catalog.pgLoadingAttachments.message);
+    assert.ok(await attachmentSelect.isDisabled());
+    await q("show-links").click();
+    await list.getByRole("option", {name: sample, exact: true}).click();
+    assert.equal(await address.inputValue(), sample, "Links work while the attachment list is loading");
+    await page.evaluate(() => window.releaseInventory());
+    await attachmentSelect.locator('option[value="a2"]').waitFor({state: "attached"});
+    assert.deepEqual(await attachmentSelect.locator("option").allTextContents(),
+      [catalog.pgChooseAttachment.message, "document.pdf (1)", "document.pdf (2)"]);
+    const visibleWithoutScrolling = node => {
+      const bounds = node.getBoundingClientRect();
+      return bounds.height > 0 && bounds.top >= 0 && bounds.bottom <= innerHeight && scrollY === 0;
+    };
+    assert.ok(await address.evaluate(visibleWithoutScrolling) && await attachmentSelect.evaluate(visibleWithoutScrolling),
+      "Both selectors are visible at launch without scrolling or switching modes");
+    assert.equal(await attachmentSelect.inputValue(), "");
+    assert.ok(await q("query-hash").isDisabled());
+    await attachmentSelect.selectOption("a2");
+    assert.deepEqual(await page.evaluate(() => [testState.reads, testState.reports, testState.lookups, testState.uploads]),
+      [[], [], [], []], "Opening the toolbar and selecting suggestions stays local and does not read attachment bytes");
     await q("query-hash").click();
     await q("upload-confirmation").waitFor();
     assert.equal(await q("attachment-sha").innerText(), secondHash);
     assert.equal(await q("upload-file-name").innerText(), "document.pdf · 11 B");
     assert.deepEqual(await page.evaluate(() => testState.reports), [{type: "pg:attachmentReport", hash: secondHash}]);
     assert.deepEqual(await page.evaluate(() => testState.reads),
-      [{id: "a2", tab: 42, name: "pg:gmail:attachment", frameId: 0}]);
+      [{id: "a2", tab: 1, name: "pg:gmail:attachment", frameId: 0}]);
     await q("cancel-upload").click();
     await q("upload-confirmation").waitFor({state: "hidden"});
     assert.deepEqual(await page.evaluate(() => testState.uploads), []);
@@ -314,9 +339,16 @@ async function run() {
       [{hash: secondHash, name: "document.pdf", confirmed: true, token: "fixture-grant", bytes: "second file"}]);
     assert.equal(await q("report").getAttribute("href"), "https://www.virustotal.com/gui/file/" + secondHash);
 
+    await openWidget({state: enabled, unavailable: true});
+    await attachmentSelect.locator("option").filter({hasText: catalog.pgAttachmentsUnavailable.message}).waitFor({state: "attached"});
+    assert.ok(await attachmentSelect.isVisible() && await attachmentSelect.isDisabled());
+    assert.ok(await address.isVisible() && await localFileButton.isVisible());
+    assert.ok(await q("query-hash").isDisabled());
+    assert.deepEqual(await page.evaluate(() => [testState.reads, testState.lookups, testState.reports]), [[], [], []]);
+
     const unusual = {id: "odd", name: "A/B\\C\u0003" + "x".repeat(501) + "📧".repeat(12) + ".pdf", body: "abc"};
     const uploadName = "A_B_C_" + "x".repeat(501) + ".pdf";
-    await openFromRow({state: enabled, attachment: unusual, attachments: [unusual]});
+    await openWidget({state: enabled, attachment: unusual, attachments: [unusual]});
     await q("upload-confirmation").waitFor();
     assert.equal(await q("attachments").locator("option:checked").textContent(), unusual.name);
     assert.equal(await q("upload-file-name").innerText(), uploadName + " · 3 B");
@@ -325,7 +357,7 @@ async function run() {
     assert.equal(await page.evaluate(() => testState.uploads[0].name), uploadName);
 
     const handoff = {id: "a1", name: "document.pdf"};
-    await openFromRow({state: {hasKey: true}, attachments, attachment: handoff, report: "reported"});
+    await openWidget({state: {hasKey: true}, attachments, attachment: handoff, report: "reported"});
     await q("status").filter({hasText: catalog.pgEnableAttachmentVT.message}).waitFor();
     assert.deepEqual(await page.evaluate(() => testState.reads), []);
     await page.evaluate(() => { testState.granted = true; });
@@ -335,24 +367,38 @@ async function run() {
     assert.equal(await q("attachment-sha").innerText(), hash(attachments[0]));
     assert.equal(await q("upload-confirmation").isVisible(), false);
 
-    await openFromRow({state: enabled, attachments, attachment: handoff, report: "error"});
+    await openWidget({state: enabled, attachments, attachment: handoff, report: "error"});
     await q("status").filter({hasText: catalog.vt_error_network.message}).waitFor();
     assert.equal(await q("upload-confirmation").isVisible(), false, "A failed lookup cannot offer upload");
-    await openFromRow({state: enabled, attachments: [{...attachments[0], hold: true}, attachments[1]], attachment: handoff});
+    await openWidget({state: enabled, attachments: [{...attachments[0], hold: true}, attachments[1]], attachment: handoff});
     await page.waitForFunction(() => typeof window.deliverFile === "function");
-    await q("attachments").selectOption("a2");
+    await attachmentSelect.selectOption("a2");
     await page.evaluate(() => window.deliverFile());
     assert.deepEqual(await page.evaluate(() => testState.reports), [], "Changing attachments cancels the previous read");
     assert.equal(await q("attachment-digest").isVisible(), false);
-    await q("attachments").selectOption("");
-    await q("file").setInputFiles({name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("abc")});
+    const [localChooser] = await Promise.all([page.waitForEvent("filechooser"), localFileButton.click()]);
+    await localChooser.setFiles({name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("abc")});
+    assert.equal(await attachmentSelect.inputValue(), "", "Choosing a local file replaces the previous Gmail attachment");
+    assert.ok((await q("local-filename").innerText()).includes("local.txt"));
     await q("query-hash").click();
     await q("result").waitFor();
     assert.deepEqual(await page.evaluate(() => testState.lookups),
       [{type: "pg:lookup", kind: "hash", value: hash(attachments[0]), confirmed: false}]);
     assert.equal(await q("upload-confirmation").isVisible(), false, "Local files keep their hash-only path");
+    await attachmentSelect.selectOption("a2");
+    await q("query-hash").click();
+    await q("upload-confirmation").waitFor();
+    assert.equal(await q("attachment-sha").textContent(), secondHash, "Selecting Gmail again clears the local file");
+    await address.fill(manual);
+    await q("query-domain").click();
+    await q("result").waitFor();
+    assert.ok(!await q("upload-confirmation").isVisible(), "Changing the URL clears the attachment upload offer");
+    assert.equal(await q("attachment-digest").isVisible(), false);
+    assert.deepEqual(await page.evaluate(() => testState.lookups.at(-1)),
+      {type: "pg:lookup", kind: "domain", value: "manual.example.test", confirmed: false});
+    assert.deepEqual(await page.evaluate(() => testState.uploads), []);
 
-    await openFromRow({url: rowImage});
+    await openWidget({url: rowImage});
     await q("key-form").waitFor();
     assert.equal(await q("lookup").isVisible(), false);
     assert.equal(await q("status").innerText(), catalog.pgRowEnableVT.message);
@@ -368,8 +414,7 @@ async function run() {
     assert.deepEqual(await page.evaluate(() => testState.lookups), []);
     assert.equal(await page.evaluate(() => testState.mail[0].id), 1);
 
-    await openFromRow({url: rowImage, state: {hasKey: true, vtEnabled: true}, hold: true});
-    await q("lookup").locator("summary").click();
+    await openWidget({url: rowImage, state: {hasKey: true, vtEnabled: true}, hold: true});
     await address.fill(manual);
     await page.evaluate(() => window.releaseRow());
     assert.equal(await address.inputValue(), manual, "A late row handoff can't replace an edit");

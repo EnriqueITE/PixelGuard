@@ -9,12 +9,12 @@
   let pending = false;
   let revision = 0;
   let preview = "";
-  let inventoryRequest;
+  let inventoryVersion = 0;
+  let links = [];
   let sourceTab;
   let rowUrl = "";
   let rowAttachment, attachmentRead, uploadOffer;
   let attachments = [];
-  let attachmentInventoryRequest;
 
   document.documentElement.lang = chrome.i18n.getUILanguage();
   for (const item of document.querySelectorAll("[data-msg]")) item.textContent = t(item.dataset.msg);
@@ -40,7 +40,7 @@
     el("attachment-sha").textContent = "";
     preview = "";
     el("confirmation").hidden = true;
-    el("link-fields").hidden = el("link-mode").getAttribute("aria-pressed") !== "true";
+    el("link-fields").hidden = false;
     el("exact-url").textContent = "";
     el("result").hidden = true;
     el("result-title").textContent = "";
@@ -87,7 +87,7 @@
   async function save(patch, { permission = false, close = false } = {}) {
     if (saving) return;
     saving = true;
-    let resumeRow = false;
+    let enabled = false;
     paint();
     status();
     try {
@@ -104,6 +104,7 @@
         return status(t("pgKeyConflict"));
       }
       if (!next?.ok) return showError(next?.error);
+      enabled = next.vtEnabled && !state.vtEnabled;
       state = next;
       if (patch.vtEnabled === false || patch.apiKey === "") {
         rowUrl = "";
@@ -111,24 +112,25 @@
       }
       if (!next.vtEnabled) {
         forgetLookup();
-        el("lookup").open = false;
-        inventoryRequest = null;
-        attachmentInventoryRequest = null;
-        showAttachments([]);
-        el("file").value = "";
+        inventoryVersion++;
+        links = [];
+        showAttachments([], "", "pgLoadingAttachments");
+        clearLocalFile();
         el("url").value = "";
         el("url").removeAttribute("title");
         urlPicker.setLinks([]);
         el("truncated").hidden = true;
       }
       if (close) keyForm(false);
-      resumeRow = next.vtEnabled && patch.vtEnabled === true && (rowAttachment || rowUrl);
       if (patch.apiKey) status(t("vt_keySaved"));
     } catch { showError("storage"); }
     finally {
       saving = false;
       paint();
-      if (resumeRow) showRowLookup();
+      if (enabled) {
+        loadInventories();
+        if (rowAttachment || rowUrl) showRowLookup();
+      }
     }
   }
   el("panel-toggle").onchange = event => save({ showPanel: event.target.checked });
@@ -164,19 +166,15 @@
     return chrome.tabs.sendMessage(id, {type}, {frameId: 0});
   }
   function showRowLookup() {
-    inventoryRequest = null;
-    el("lookup").hidden = false;
-    el("lookup").open = true;
     if (rowAttachment) {
-      showAttachments([rowAttachment], rowAttachment.id);
+      const items = attachments.some(item => item.id === rowAttachment.id) ? attachments : [rowAttachment, ...attachments];
+      showAttachments(items, rowAttachment.id);
       rowAttachment = null;
-      setMode(true);
       queryAttachment();
       return;
     }
-    urlPicker.setLinks([{url: rowUrl}]);
+    showLinks();
     urlPicker.selectUrl(rowUrl);
-    loadLinks();
   }
   async function takeRowSelection() {
     const before = revision;
@@ -197,29 +195,35 @@
     } catch { /* The toolbar also works on tabs without a Gmail content script. */ }
   }
 
-  async function loadLinks() {
-    if (!state?.vtEnabled || inventoryRequest || !el("lookup").open) return;
-    const request = {};
-    inventoryRequest = request;
+  function showLinks() {
+    const includeRow = rowUrl && !links.some(link => link.url === rowUrl);
+    urlPicker.setLinks(includeRow ? [{url: rowUrl}, ...links] : links);
+  }
+  function loadInventories() {
+    const version = ++inventoryVersion;
+    loadLinks(version);
+    loadAttachments(version);
+  }
+  async function loadLinks(version) {
     try {
       const data = await fromMail("pg:gmail:links");
-      if (request !== inventoryRequest) return;
-      const links = data?.links || [];
-      if (rowUrl && !links.some(link => link.url === rowUrl)) links.unshift({url: rowUrl});
-      urlPicker.setLinks(links);
+      if (version !== inventoryVersion) return;
+      links = data?.links || [];
+      showLinks();
       el("truncated").hidden = !data?.truncated;
     } catch { /* Pasting a URL also works outside an open Gmail message. */ }
   }
   function validAttachment(item) {
     return typeof item?.id === "string" && !!item.id && typeof item.name === "string" && !!item.name;
   }
-  function showAttachments(items, selected = "") {
+  function showAttachments(items, selected = "", emptyText = "pgNoAttachments") {
     attachments = items.filter(validAttachment);
     const select = el("attachments");
     const names = new Map();
     for (const item of attachments) names.set(item.name, (names.get(item.name) || 0) + 1);
     const numbered = new Map();
-    select.replaceChildren(new Option(t("pgPickLocalFile"), ""));
+    const placeholder = new Option(t(attachments.length ? "pgChooseAttachment" : emptyText), "");
+    select.replaceChildren(placeholder);
     for (const item of attachments) {
       let label = item.name;
       if (names.get(item.name) > 1) {
@@ -227,54 +231,55 @@
         numbered.set(item.name, n);
         label += " (" + n + ")";
       }
-      select.add(new Option(label, item.id));
+      const option = new Option(label, item.id);
+      option.title = item.name;
+      select.add(option);
     }
     select.value = selected;
     if (select.selectedIndex < 0) select.selectedIndex = 0;
-    el("attachment-picker").hidden = !attachments.length;
-    el("local-file").hidden = !!select.value;
+    select.disabled = !attachments.length;
+    select.title = select.selectedOptions[0].textContent;
+    select.setAttribute("aria-busy", String(!attachments.length && emptyText === "pgLoadingAttachments"));
     updateButtons();
   }
-  async function loadAttachments() {
-    if (!state?.vtEnabled || attachmentInventoryRequest || !el("lookup").open) return;
-    const request = {};
-    attachmentInventoryRequest = request;
+  async function loadAttachments(version) {
+    let reply;
     try {
-      const reply = await fromMail("pg:gmail:attachments");
-      if (request !== attachmentInventoryRequest || !Array.isArray(reply?.attachments)) return;
-      const selected = el("attachments").value;
-      showAttachments(reply.attachments, selected);
-      if (selected && !el("attachments").value) {
-        forgetLookup();
-        showError("stale_message");
-      }
+      reply = await fromMail("pg:gmail:attachments");
     } catch { /* The local file picker is available outside Gmail. */ }
-  }
-  el("lookup").ontoggle = () => {
-    if (!el("lookup").open) {
-      attachmentInventoryRequest = null;
-      urlPicker.close();
+    if (version !== inventoryVersion) return;
+    const selected = el("attachments").value;
+    if (!Array.isArray(reply?.attachments)) {
+      if (!selected) showAttachments([], "", "pgAttachmentsUnavailable");
+      return;
+    }
+    showAttachments(reply.attachments, selected);
+    if (selected && !el("attachments").value) {
       forgetLookup();
-    } else if (el("file-fields").hidden) loadLinks();
-    else loadAttachments();
-  };
-  el("attachments").onchange = () => {
-    el("file").value = "";
-    el("local-file").hidden = !!el("attachments").value;
-    forgetLookup();
-  };
-  el("file").onchange = forgetLookup;
-  function setMode(file) {
-    urlPicker.close();
-    el("link-mode").setAttribute("aria-pressed", String(!file));
-    el("file-mode").setAttribute("aria-pressed", String(file));
-    el("file-fields").hidden = !file;
-    forgetLookup();
-    if (file) loadAttachments();
-    else { attachmentInventoryRequest = null; loadLinks(); }
+      showError("stale_message");
+    }
   }
-  el("link-mode").onclick = () => setMode(false);
-  el("file-mode").onclick = () => setMode(true);
+  function clearLocalFile() {
+    el("file").value = "";
+    el("local-filename").hidden = true;
+    el("local-filename").textContent = "";
+  }
+  el("attachments").onchange = event => {
+    event.target.title = event.target.selectedOptions[0].textContent;
+    clearLocalFile();
+    forgetLookup();
+  };
+  el("choose-local-file").onclick = () => el("file").click();
+  el("file").onchange = event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const select = el("attachments");
+    select.value = "";
+    select.title = select.selectedOptions[0].textContent;
+    el("local-filename").textContent = file.name;
+    el("local-filename").hidden = false;
+    forgetLookup();
+  };
 
   function present(result, fileHash) {
     el("result-title").textContent = result.status === "submitted" ? t("pgFileSubmitted") :
@@ -409,5 +414,6 @@
     state = reply;
     paint();
     takeRowSelection();
+    if (state.vtEnabled) loadInventories();
   }).catch(() => showError("storage"));
 })();

@@ -38,70 +38,66 @@
           <button id="cancel-key" type="button" data-msg="vt_cancel"></button></div>
         <button id="delete-key" type="button" class="text-btn danger" data-msg="vt_delete" hidden></button>
       </form>
-      <details id="lookup" hidden>
-        <summary data-msg="vt_title"></summary>
-        <div class="work">
-          <div class="mode" role="group" aria-label="VirusTotal">
-            <button type="button" id="link-mode" aria-pressed="true" data-msg="pgLink"></button>
-            <button type="button" id="file-mode" aria-pressed="false" data-msg="pgFile"></button>
+      <div id="lookup" class="work" hidden>
+        <div id="link-fields">
+          <label id="url-label" for="url" data-msg="pgLinkAddress"></label>
+          <div id="url-picker">
+            <div id="url-control">
+              <input id="url" type="text" inputmode="url" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="url-options"
+                     dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="16384">
+              <span id="picked-url" dir="ltr" aria-hidden="true" hidden></span>
+              <button id="show-links" type="button" tabindex="-1" aria-haspopup="listbox" aria-controls="url-options" hidden></button>
+            </div>
+            <div id="url-options" role="listbox" aria-labelledby="url-label" dir="ltr" hidden></div>
           </div>
-          <div id="link-fields">
-            <label id="url-label" for="url" data-msg="pgLinkAddress"></label>
-            <div id="url-picker">
-              <div id="url-control">
-                <input id="url" type="text" inputmode="url" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="url-options"
-                       dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="16384">
-                <span id="picked-url" dir="ltr" aria-hidden="true" hidden></span>
-                <button id="show-links" type="button" tabindex="-1" aria-haspopup="listbox" aria-controls="url-options" hidden></button>
-              </div>
-              <div id="url-options" role="listbox" aria-labelledby="url-label" dir="ltr" hidden></div>
-            </div>
-            <p class="muted" id="truncated" data-msg="vt_truncated" hidden></p>
-            <div class="buttons">
-              <button id="query-domain" class="primary" disabled data-msg="vt_queryDomain"></button>
-              <button id="preview-url" disabled data-msg="pgReviewUrl"></button>
-            </div>
-          </div>
-          <div id="confirmation" hidden>
-            <strong data-msg="pgShareTitle"></strong>
-            <pre id="exact-url" dir="ltr" tabindex="0"></pre>
-            <p class="muted" data-msg="pgUrlNotice"></p>
-            <div class="buttons"><button id="confirm-url" class="primary" data-msg="vt_confirmUrl"></button>
-              <button id="cancel-url" data-msg="vt_cancel"></button></div>
-          </div>
-          <div id="file-fields" hidden>
-            <div id="attachment-picker" hidden>
-              <label for="attachments" data-msg="pgAttachments"></label>
-              <select id="attachments"></select>
-            </div>
-            <div id="local-file">
-              <label for="file" data-msg="pgLocalFile"></label>
-              <input type="file" id="file" aria-describedby="file-hint">
-            </div>
-            <p class="muted" id="file-hint" data-msg="pgFileHint"></p>
-            <button id="query-hash" class="primary" data-msg="vt_queryHash" disabled></button>
-            <div id="attachment-digest" hidden>
-              <strong>SHA-256</strong>
-              <code id="attachment-sha" dir="ltr"></code>
-            </div>
-          </div>
-          <div id="result" role="status" hidden>
-            <strong id="result-title"></strong>
-            <p id="zero-note" class="muted" data-msg="vt_notSafe" hidden></p>
-            <p id="result-time" class="muted"></p>
-            <a id="report" target="_blank" rel="noopener noreferrer" data-msg="vt_openReport" hidden></a>
-          </div>
-          <div id="upload-confirmation" role="group" aria-labelledby="upload-heading" hidden>
-            <strong id="upload-heading" data-msg="pgUploadQuestion"></strong>
-            <div id="upload-file-name" dir="auto"></div>
-            <p class="muted" data-msg="pgUploadNotice"></p>
-            <div class="buttons">
-              <button type="button" id="cancel-upload" data-msg="vt_cancel"></button>
-              <button type="button" id="confirm-upload" class="primary" data-msg="pgConfirmUpload"></button>
-            </div>
+          <p class="muted" id="truncated" data-msg="vt_truncated" hidden></p>
+          <div class="buttons">
+            <button id="query-domain" class="primary" disabled data-msg="vt_queryDomain"></button>
+            <button id="preview-url" disabled data-msg="pgReviewUrl"></button>
           </div>
         </div>
-      </details>
+        <div id="confirmation" hidden>
+          <strong data-msg="pgShareTitle"></strong>
+          <pre id="exact-url" dir="ltr" tabindex="0"></pre>
+          <p class="muted" data-msg="pgUrlNotice"></p>
+          <div class="buttons"><button id="confirm-url" class="primary" data-msg="vt_confirmUrl"></button>
+            <button id="cancel-url" data-msg="vt_cancel"></button></div>
+        </div>
+        <div id="file-fields">
+          <div id="attachment-picker">
+            <label for="attachments" data-msg="pgAttachments"></label>
+            <select id="attachments" disabled aria-busy="true" aria-describedby="file-hint">
+              <option value="" data-msg="pgLoadingAttachments"></option>
+            </select>
+          </div>
+          <input type="file" id="file" hidden>
+          <output id="local-filename" dir="auto" hidden></output>
+          <div class="buttons">
+            <button id="query-hash" class="primary" data-msg="vt_queryHash" disabled></button>
+            <button type="button" class="text-btn" id="choose-local-file" data-msg="pgPickLocalFile"></button>
+          </div>
+          <p class="muted" id="file-hint" data-msg="pgFileHint"></p>
+          <div id="attachment-digest" hidden>
+            <strong>SHA-256</strong>
+            <code id="attachment-sha" dir="ltr"></code>
+          </div>
+        </div>
+        <div id="result" role="status" hidden>
+          <strong id="result-title"></strong>
+          <p id="zero-note" class="muted" data-msg="vt_notSafe" hidden></p>
+          <p id="result-time" class="muted"></p>
+          <a id="report" target="_blank" rel="noopener noreferrer" data-msg="vt_openReport" hidden></a>
+        </div>
+        <div id="upload-confirmation" role="group" aria-labelledby="upload-heading" hidden>
+          <strong id="upload-heading" data-msg="pgUploadQuestion"></strong>
+          <div id="upload-file-name" dir="auto"></div>
+          <p class="muted" data-msg="pgUploadNotice"></p>
+          <div class="buttons">
+            <button type="button" id="cancel-upload" data-msg="vt_cancel"></button>
+            <button type="button" id="confirm-upload" class="primary" data-msg="pgConfirmUpload"></button>
+          </div>
+        </div>
+      </div>
     </section>
     <p id="status" role="status" hidden></p>
   </main>

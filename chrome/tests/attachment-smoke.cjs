@@ -14,7 +14,8 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 function card(part, id) {
   const href = gmail + '?ui=2&amp;view=att&amp;th=abcd&amp;attid=' + part + '&amp;disp=inline';
-  return '<span class="aZo" id="' + id + '" download_url="application/octet-stream:' + filename + ':' + href +
+  const downloadUrl = part === '0.1' ? gmail + href : href;
+  return '<span class="aZo" id="' + id + '" download_url="application/octet-stream:' + filename + ':' + downloadUrl +
     '"><a class="aQy" href="' + href + '"><span class="aQA"><span class="aV3">' + filename +
     '</span></span></a><span class="aQw"></span></span>';
 }
@@ -23,6 +24,7 @@ const shell = '<!doctype html><main><article class="adn" data-legacy-message-id=
   card('0.1', 'known') + card('0.2', 'unknown') +
   card('0.1', 'other-message').replaceAll('th=abcd', 'th=aaaa') +
   card('0.1', 'other-account').replaceAll('/u/0/', '/u/1/') +
+  card('0.1', 'mixed-accounts').replace(gmail + gmail, gmail + gmail.replace('/u/0/', '/u/1/')) +
   '<span class="aZo"><a class="aQy" href="https://drive.google.com/open?id=test"><span class="aV3">Drive</span></a></span>' +
   '</div></article></main>';
 const original = 'Content-Type: multipart/mixed; boundary="mail"\r\n\r\n--mail\r\n' +
@@ -110,8 +112,19 @@ async function main() {
     await buttons.nth(1).waitFor();
     assert.equal(await buttons.count(), 2);
     assert.equal(await mail.locator('#sender-content button').count(), 0);
+    // Open the actual toolbar popup with Gmail active, without selecting a result or attachment.
+    await worker.evaluate(() => chrome.action.openPopup());
+    await config.waitForFunction(label => chrome.extension.getViews({type: 'popup'}).some(view => {
+      const doc = view.document;
+      const picker = doc.getElementById('attachments');
+      return doc.getElementById('url')?.getClientRects().length && picker?.getClientRects().length &&
+        !picker.disabled && picker.value === '' &&
+        Array.from(picker.options).filter(option => option.textContent.startsWith(label)).length === 2;
+    }), filename);
     assert.deepEqual(downloads, []);
     assert.deepEqual(await requests(), []);
+    await config.evaluate(() => chrome.extension.getViews({type: 'popup'})[0].close());
+    await mail.bringToFront();
     await buttons.first().click();
     // Chrome's toolbar widget may not be enumerated as a normal browser tab.
     await config.waitForFunction(expected => chrome.extension.getViews().some(view => view !== window &&

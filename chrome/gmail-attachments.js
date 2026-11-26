@@ -50,8 +50,12 @@
       // Signed resource URLs are hints only. Never contact their origin.
       const signed = url.origin === 'https://mail-attachment.googleusercontent.com' &&
         (url.pathname === '/attachment/' || url.pathname.startsWith('/attachment/u/' + account[1] + '/'));
-      if (!signed && (url.origin !== 'https://mail.google.com' || url.pathname.replace(/\/$/, '') !== account[0] ||
-          url.searchParams.get('view') !== 'att')) return null;
+      const path = url.pathname.replace(/\/$/, '');
+      // Some Gmail cards prepend the account URL twice in download_url, while
+      // their preview href uses it once. Only recognize the same account twice.
+      const nativePath = path === account[0] || (raw === download?.[2] &&
+        path === account[0] + '/' + location.origin + account[0]);
+      if (!signed && (url.origin !== 'https://mail.google.com' || !nativePath || url.searchParams.get('view') !== 'att')) return null;
       const legacy = url.searchParams.get('th');
       const permanent = url.searchParams.get('permmsgid');
       if ((legacy && legacy.toLowerCase() !== messageId) || (permanent && permanent !== owner) ||

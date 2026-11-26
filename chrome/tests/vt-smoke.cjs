@@ -70,7 +70,7 @@ async function main() {
     assert.equal(await popup.evaluate(() => self.permissionRequests), 0);
     assert.deepEqual(await queries(), []);
     await popup.locator('#vt-toggle').click();
-    await popup.locator('#lookup > summary').click();
+    await popup.locator('#attachments').waitFor();
     assert.equal(await popup.evaluate(() => self.permissionRequests), 1);
     const url = 'https://example.test/path?token=demo';
     await popup.locator('#url').fill(url);
@@ -90,8 +90,8 @@ async function main() {
     assert.deepEqual(await queries(), ['example.test', url]);
     const content = Buffer.from('test file contents');
     const hash = createHash('sha256').update(content).digest('hex');
-    await popup.locator('#file-mode').click();
-    await popup.locator('#file').setInputFiles({ name: 'test.txt', mimeType: 'text/plain', buffer: content });
+    const [chooser] = await Promise.all([popup.waitForEvent('filechooser'), popup.locator('#choose-local-file').click()]);
+    await chooser.setFiles({ name: 'test.txt', mimeType: 'text/plain', buffer: content });
     assert.deepEqual(await queries(), ['example.test', url]);
     await popup.locator('#query-hash').click();
     await result.filter({ hasText: '2 / 83' }).waitFor();

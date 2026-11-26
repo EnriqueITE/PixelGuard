@@ -86,10 +86,10 @@ async function main() {
     // are not guaranteed to appear as regular Playwright tabs.
     await rowButton(imageRow).click();
     await reader.waitForFunction(expected => chrome.extension.getViews().some(view => view !== window &&
-      view.document.querySelector('#lookup[open]') && view.document.querySelector('#url')?.value === expected), pixel,
+      view.document.querySelector('#lookup:not([hidden])') && view.document.querySelector('#url')?.value === expected), pixel,
       {polling: 100});
     const firstPopup = await reader.evaluate(() => {
-      const view = chrome.extension.getViews().find(other => other !== window && other.document.querySelector('#lookup[open]'));
+      const view = chrome.extension.getViews().find(other => other !== window && other.document.querySelector('#lookup:not([hidden])'));
       const mode = view.location.hash ? 'separate window' : 'toolbar popup';
       view.close();
       return mode;
@@ -102,7 +102,7 @@ async function main() {
     await mail.bringToFront();
     const [popup] = await Promise.all([ctx.waitForEvent('page'), rowButton(imageRow).click()]);
     await popup.waitForURL(new URL('popup.html#tab=' + source, worker.url()).href);
-    await popup.waitForFunction(value => document.querySelector('#lookup').open && document.querySelector('#url').value === value, pixel);
+    await popup.waitForFunction(value => !document.querySelector('#lookup').hidden && document.querySelector('#url').value === value, pixel);
     const address = popup.locator('#url');
     assert.equal(await address.getAttribute('title'), pixel);
     assert.deepEqual(await queries(), []);
