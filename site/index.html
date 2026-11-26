@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f8fa">
+  <meta name="description" content="PixelGuard detecta indicios de seguimiento en los correos que abres en Thunderbird y Gmail. Revisa píxeles, enlaces e imágenes externas desde tu equipo.">
+  <title>PixelGuard · Privacidad en Thunderbird y Gmail</title>
+  <link rel="icon" href="assets/pixelguard.png">
+  <link rel="stylesheet" href="site.css">
+  <script src="locales.js" defer></script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#principal" data-text="skip">Saltar al contenido</a>
+  <header class="mast"><div class="wrap bar">
+    <a class="brand" href="#principal"><img src="assets/pixelguard.png" alt="" width="38" height="38">PixelGuard</a>
+    <nav data-label="nav" aria-label="Principal"><a href="#ejemplo" data-text="how">Cómo funciona</a><a href="#privacidad" data-text="privacy">Privacidad</a><a class="repo" href="https://github.com/EnriqueITE/PixelGuard">GitHub <span aria-hidden="true">↗</span></a><label class="language" hidden><span aria-hidden="true">◎</span><select data-label="language" aria-label="Idioma"><option value="auto" data-text="auto">Idioma del navegador</option><option value="en" lang="en">English</option><option value="de" lang="de">Deutsch</option><option value="el" lang="el">Ελληνικά</option><option value="es" lang="es">Español</option><option value="fr" lang="fr">Français</option><option value="it" lang="it">Italiano</option><option value="ru" lang="ru">Русский</option><option value="zh-CN" lang="zh-CN">简体中文</option></select></label></nav>
+  </div></header>
+  <main id="principal">
+    <section class="hero" aria-labelledby="nombre">
+      <div class="wrap hero-inner">
+        <div class="intro">
+          <p class="kicker"><span class="signal" aria-hidden="true"></span> <span data-text="kicker">Extensión de código abierto</span></p>
+          <h1 id="nombre">PixelGuard<br><em data-text="hero">para tu correo.</em></h1>
+          <p class="lead" data-text="lead">Descubre qué imágenes podrían registrar que has abierto un correo y qué enlaces podrían rastrear tus clics.</p>
+          <div class="actions">
+            <a class="platform" href="https://addons.thunderbird.net/thunderbird/addon/pixelguard/"><strong data-text="tb">Para Thunderbird</strong><small data-text="tbStore">Tienda de complementos</small><span aria-hidden="true">↗</span></a>
+            <a class="platform" href="https://github.com/EnriqueITE/PixelGuard/blob/daecf32bf59dadef024c599cf287d9f325b9f209/chrome/README.md#cargar-en-chrome"><strong data-text="gmail">Para Gmail</strong><small data-text="gmailGuide">Guía para Chrome y Brave</small><span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="art"><img data-alt="art" src="assets/sobre.webp" alt="Una lupa amplía un grupo de píxeles en la esquina de un sobre azul." fetchpriority="high" width="1536" height="1024"></div>
+      </div>
+    </section>
+    <section class="example wrap" id="ejemplo" aria-labelledby="demo-title">
+      <div class="section-intro"><p class="kicker"><span class="rule"></span> <span data-text="analysis">El análisis</span></p>
+      <h2 id="demo-title" data-text="demoTitle">Qué hay detrás de un correo.</h2>
+      <p data-text="demoIntro">Elige un tipo de indicio para ver qué ha encontrado PixelGuard en este correo de ejemplo y por qué lo señala.</p>
+      <div class="references" role="group" data-label="screens" aria-label="Capturas de la extensión">
+        <a class="quiet" href="assets/panel-thunderbird.png"><span data-text="showTb">Ver en Thunderbird</span> <span aria-hidden="true">↗</span></a>
+        <a class="quiet" href="assets/panel-gmail.png"><span data-text="showGmail">Ver en Gmail</span> <span aria-hidden="true">↗</span></a>
+      </div></div>
+      <div class="report">
+        <div class="report-head"><img src="assets/pixelguard.png" width="30" height="30" alt=""><strong>PixelGuard</strong><span data-text="sample">Correo de ejemplo</span></div>
+        <div class="filters" role="group" data-label="filters" aria-label="Filtrar los hallazgos del ejemplo" hidden>
+          <button type="button" data-filter="pixel" aria-pressed="true" data-text="pixel">Píxel</button>
+          <button type="button" data-filter="link" aria-pressed="false" data-text="link">Enlace</button>
+          <button type="button" data-filter="image" aria-pressed="false" data-text="image">Imagen</button>
+        </div>
+        <div class="readout" aria-live="polite">
+          <article data-result="pixel"><p class="kind red" data-text="pixelKind">Posible píxel de seguimiento</p><h3 data-text="pixelTitle">Una imagen de 1 × 1 píxel</h3><code>https://metrics.example.test/open.gif?uid=demo</code><p data-text="pixelText">Su tamaño y el identificador de la URL son indicios de que podría registrar la apertura del correo.</p></article>
+          <article data-result="link"><p class="kind amber" data-text="linkKind">Enlace con indicios de seguimiento</p><h3 data-text="linkTitle">Un clic con identificador</h3><code>https://click.example.test/redirect?utm_campaign=weekly</code><p data-text="linkText">La dirección pasa por una ruta de redirección e incluye un parámetro de campaña. PixelGuard la examina como texto.</p></article>
+          <article data-result="image"><p class="kind teal" data-text="imageKind">Imagen externa</p><h3 data-text="imageTitle">Un logotipo remoto</h3><code>https://media.example.test/news/logo.png</code><p data-text="imageText">El logotipo está alojado fuera del correo. La dirección por sí sola aporta poca información sobre su finalidad.</p></article>
+        </div>
+      </div>
+    </section>
+    <section class="privacy" id="privacidad"><div class="wrap privacy-grid">
+      <div><p class="kicker"><span class="rule"></span> <span data-text="privacy">Privacidad</span></p><h2 data-text="privacyTitle">Tu correo se analiza en tu equipo.</h2></div>
+      <div class="privacy-copy"><h3 data-text="opening">Al abrir un mensaje</h3><p data-text="openingText">En Thunderbird, PixelGuard examina el contenido del correo abierto. En Gmail, pide el original con tu sesión para detectar indicios incluso con las imágenes bloqueadas. En ambos casos analiza las direcciones sin visitar enlaces ni cargar imágenes del remitente.</p>
+      <h3 data-text="vt">Si decides consultar VirusTotal</h3><p data-text="vtText">Con tu propia clave puedes consultar un dominio o la huella de un adjunto. Para compartir una URL completa, PixelGuard te pide confirmación. En Gmail también puedes autorizar la subida de un adjunto si VirusTotal desconoce su huella.</p>
+      <div class="references" role="group" data-label="policies" aria-label="Políticas de privacidad">
+        <a class="quiet" href="https://addons.thunderbird.net/thunderbird/addon/pixelguard/privacy/"><span data-text="policyTb">Privacidad en Thunderbird</span> <span aria-hidden="true">↗</span></a>
+        <a class="quiet" href="https://github.com/EnriqueITE/PixelGuard/blob/daecf32bf59dadef024c599cf287d9f325b9f209/chrome/PRIVACY.md"><span data-text="policyGmail">Privacidad en Gmail</span> <span aria-hidden="true">↗</span></a>
+      </div></div>
+    </div></section>
+  </main>
+  <footer class="wrap bar"><a class="brand" href="#principal"><img src="assets/pixelguard.png" width="32" height="32" alt="">PixelGuard</a><a class="quiet" href="https://github.com/EnriqueITE/PixelGuard/issues"><span data-text="support">Contacto y soporte</span> <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>
