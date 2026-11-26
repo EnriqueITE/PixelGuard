@@ -1,4 +1,4 @@
-/* global chrome, PixelGuardScanner, PixelGuardVTInventory, PixelGuardGmailOriginal, PixelGuardOriginalScan, PixelGuardOriginalMime */
+/* global chrome, PixelGuardScanner, PixelGuardVTInventory, PixelGuardGmailOriginal, PixelGuardGmailAttachments, PixelGuardOriginalScan, PixelGuardOriginalMime */
 (() => {
   if (globalThis.pixelGuardGmailAttached || !location.pathname.startsWith("/mail/")) return;
   globalThis.pixelGuardGmailAttached = true;
@@ -19,6 +19,7 @@
   const pageSize = 3;
   let showPanel = false;
   let theme = "light";
+  const attachments = PixelGuardGmailAttachments.create(openVirusTotal, contextActive);
   const t = (key, ...values) => chrome.i18n.getMessage(key, values);
   // Show the highest-priority group first, also used for the summary's accent.
   const categories = {
@@ -139,13 +140,12 @@
     vtSelection = null;
   }
 
-  async function openVirusTotal(event, url, panel) {
+  async function openVirusTotal(event, payload, panel) {
     const control = event.currentTarget;
     if (!event.isTrusted || !contextActive() || !control.isConnected) return;
-    const actions = control.parentElement;
-    actions.querySelector('[role="status"]')?.remove();
+    if (control.nextElementSibling?.matches(".pg-vt-notice")) control.nextElementSibling.remove();
     clearVtSelection();
-    const selection = {url, panel, page: location.href};
+    const selection = {payload, panel, page: location.href};
     vtSelection = selection;
     // Only the opening widget can take this short-lived selection. The worker opens it without the URL.
     vtSelectionTimer = setTimeout(clearVtSelection, 30000);
@@ -156,9 +156,9 @@
     } catch {
       if (vtSelection === selection) clearVtSelection();
       if (contextActive() && control.isConnected) {
-        const notice = element("span", "", t("gmailVtOpenFailed"));
+        const notice = element("span", "pg-vt-notice", t("gmailVtOpenFailed"));
         notice.setAttribute("role", "status");
-        actions.append(notice);
+        control.after(notice);
       }
     } finally {
       control.disabled = false;
@@ -210,7 +210,7 @@
       if (target) {
         const vt = button("VirusTotal");
         vt.title = t("gmailVtOpen");
-        vt.addEventListener("click", event => openVirusTotal(event, target.href, state.panel));
+        vt.addEventListener("click", event => openVirusTotal(event, {url: target.href}, state.panel));
         actions.append(vt);
       }
       detail.append(element("span", "", reason), actions);
@@ -425,6 +425,7 @@
       return;
     }
     const visible = new Set(visibleBodies());
+    attachments.refresh(theme);
     let suspicious = 0, externals = 0, links = 0;
     let tabScanning = false;
     for (const body of visible) {
@@ -503,6 +504,7 @@
     clearTimeout(refreshTimer);
     clearTimeout(preferenceTimer);
     clearVtSelection();
+    attachments.clear();
     for (const entry of messages.values()) {
       entry.request?.abort();
       entry.view?.panel.remove();
@@ -536,11 +538,12 @@
     subtree: true, childList: true, characterData: true, attributes: true,
     attributeFilter: ["class", "hidden", "inert", "aria-hidden", "style", "src", "srcset", "data-src",
       "data-original", "data-lazy", "data-lazy-src", "data-url", "data-srcset", "href",
-      "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
+      "download_url", "download", "height", "width", "alt", "aria-label", "role", "data-message-id", "data-legacy-message-id", "email", "contenteditable", "g_editable"]
   });
   const listenerOptions = {signal: lifetime.signal};
-  window.addEventListener("hashchange", () => { clearVtSelection(); scheduleRefresh(); }, listenerOptions);
-  window.addEventListener("pagehide", clearVtSelection, listenerOptions);
+  function clearMessageSelection() { clearVtSelection(); attachments.clear(); }
+  window.addEventListener("hashchange", () => { clearMessageSelection(); scheduleRefresh(); }, listenerOptions);
+  window.addEventListener("pagehide", clearMessageSelection, listenerOptions);
   window.addEventListener("pageshow", event => {
     if (event.persisted) { lastCounts = ""; scheduleRefresh(); }
   }, listenerOptions);
@@ -550,6 +553,9 @@
   // An extension reload invalidates the old script, but the page keeps its DOM.
   for (const panel of document.querySelectorAll("details.pixelguard-gmail")) {
     if (panel.querySelector("summary > img")?.getAttribute("src") === iconUrl) panel.remove();
+  }
+  for (const control of document.querySelectorAll(".pixelguard-attachment-action")) {
+    if (!control.closest(".a3s")) control.remove();
   }
   let receivedPreference = false;
   function applyPreferences(preferences) {
@@ -568,14 +574,28 @@
       reply({ready: true});
     } else if (message.type === "pg:gmail:links") {
       reply(linkInventory());
+    } else if (message.type === "pg:gmail:attachments") {
+      if (sender.url?.split("#")[0] !== popupUrl) return;
+      attachments.refresh(theme);
+      reply({attachments: attachments.list()});
     } else if (message.type === "pg:gmail:takeVtSelection") {
       if (sender.url?.split("#")[0] !== popupUrl) return;
       const selection = vtSelection;
       clearVtSelection();
-      reply({url: selection?.page === location.href && selection.panel.isConnected ? selection.url : null});
+      const valid = selection?.page === location.href && selection.panel.isConnected &&
+        (!selection.payload.attachment || attachments.find(selection.payload.attachment.id));
+      reply(valid ? selection.payload : {url: null});
     } else if (message.type === "pg:panelChanged") {
       applyPreferences(message);
     }
+  });
+  chrome.runtime.onConnect.addListener(port => {
+    if (port.name !== "pg:gmail:attachment") return;
+    if (!contextActive() || port.sender?.id !== extensionId || port.sender.url?.split("#")[0] !== popupUrl) {
+      port.disconnect();
+      return;
+    }
+    attachments.connect(port);
   });
   const preferenceRetries = [250, 1000, 4000];
   async function loadPreference(attempt = 0) {

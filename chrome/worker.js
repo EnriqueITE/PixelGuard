@@ -1,5 +1,5 @@
-/* global chrome, importScripts, PixelGuardVTInventory, PixelGuardVTWidget, PixelGuardVault */
-importScripts('virustotal/inventory.js', 'virustotal/widget.js', 'vault.js');
+/* global chrome, importScripts, PixelGuardVTInventory, PixelGuardVTWidget, PixelGuardVTAttachments, PixelGuardVault */
+importScripts('virustotal/inventory.js', 'virustotal/widget.js', 'virustotal/attachments.js', 'vault.js');
 
 const VT_PERMISSION = { origins: ['https://www.virustotal.com/*'] };
 const storage = chrome.storage.local;
@@ -80,6 +80,7 @@ async function settings(msg) {
         const enabled = hasKey && (msg.vtEnabled ?? config.enabled) === true;
         if (enabled && !await chrome.permissions.contains(VT_PERMISSION)) return fail('permission_denied');
         pending?.abort();
+        await chrome.storage.session.remove('vtUploadGrants');
         if (hasKey) {
           const sealedKey = apiKey ? await vault.seal(apiKey) : config.sealedKey;
           await storage.set({ ...update, vtConfig: { enabled, sealedKey } });
@@ -119,10 +120,7 @@ async function reserve() {
   return null;
 }
 
-async function lookup(msg) {
-  const value = observable(msg);
-  if (!value) return fail(msg.kind === 'hash' ? 'unavailable' : 'invalid_url');
-  if (msg.kind === 'url' && msg.confirmed !== true) return fail('confirmation_required');
+async function withVirusTotal(operation, timeoutMs = 20000) {
   if (pending) return fail('busy');
   const controller = new AbortController();
   pending = controller;
@@ -134,16 +132,20 @@ async function lookup(msg) {
       if (!await chrome.permissions.contains(VT_PERMISSION)) return fail('permission_denied');
       if (controller.signal.aborted) return fail('disabled');
       const apiKey = await vault.unseal(config.sealedKey);
-      return await reserve() || { ok: true, apiKey };
+      return {ok: true, apiKey, keyId: config.sealedKey.iv};
     });
     if (!ticket.ok) return ticket;
     if (controller.signal.aborted) return fail('disabled');
-    timeout = setTimeout(() => controller.abort('timeout'), 20000);
+    timeout = setTimeout(() => controller.abort('timeout'), timeoutMs);
+    const charge = () => withConfig(async config => {
+      if (controller.signal.aborted || !config.enabled || config.sealedKey?.iv !== ticket.keyId) return fail('disabled');
+      if (!await chrome.permissions.contains(VT_PERMISSION)) return fail('permission_denied');
+      return reserve();
+    }).catch(() => fail('storage'));
     try {
-      const reply = await PixelGuardVTWidget.lookup(value, ticket.apiKey, controller.signal);
+      const reply = await operation(ticket.apiKey, controller.signal, charge);
       if (controller.signal.aborted) return fail(controller.signal.reason === 'timeout' ? 'timeout' : 'disabled');
-      if (!reply.ok) return reply;
-      return { ok: true, result: { ...reply.result, queriedAt: Date.now(), reportUrl: reply.reportUrl } };
+      return reply;
     } catch (_) {
       if (controller.signal.aborted) return fail(controller.signal.reason === 'timeout' ? 'timeout' : 'disabled');
       return fail('network');
@@ -152,6 +154,69 @@ async function lookup(msg) {
     clearTimeout(timeout);
     pending = undefined;
   }
+}
+
+async function lookup(msg) {
+  const value = observable(msg);
+  if (!value) return fail(msg.kind === 'hash' ? 'unavailable' : 'invalid_url');
+  if (msg.kind === 'url' && msg.confirmed !== true) return fail('confirmation_required');
+  return withVirusTotal(async (apiKey, signal, charge) => {
+    const limit = await charge();
+    if (limit) return limit;
+    const reply = await PixelGuardVTWidget.lookup(value, apiKey, signal);
+    if (!reply.ok) return reply;
+    return {ok: true, result: {...reply.result, queriedAt: Date.now(), reportUrl: reply.reportUrl}};
+  });
+}
+
+// A report miss and the ensuing confirmation may span MV3 worker lifetimes.
+// Session storage is restricted to trusted extension contexts by default.
+async function updateUploadGrant(owner, signal, operation) {
+  return withConfig(async () => {
+    if (signal.aborted) return fail('disabled');
+    const {vtUploadGrants = []} = await chrome.storage.session.get('vtUploadGrants');
+    const active = vtUploadGrants.filter(grant => grant.expiresAt > Date.now());
+    const {grant, reply} = operation(active.find(item => item.owner === owner));
+    const others = active.filter(item => item.owner !== owner);
+    if (grant) others.push(grant);
+    await chrome.storage.session.set({vtUploadGrants: others});
+    return reply;
+  }).catch(() => fail('storage'));
+}
+
+async function attachmentAction(msg, sender) {
+  const hash = observable({kind: 'hash', value: msg.hash});
+  if (!hash) return fail('unavailable');
+  const owner = sender.documentId || sender.url + '#' + (sender.tab?.id ?? '');
+  if (msg.type === 'pg:attachmentReport') {
+    return withVirusTotal(async (key, signal, charge) => {
+      const cleared = await updateUploadGrant(owner, signal, () => ({reply: null}));
+      if (cleared) return cleared;
+      const limit = await charge();
+      if (limit) return limit;
+      const reply = await PixelGuardVTAttachments.report(hash, key, signal);
+      if (reply.result?.status !== 'no_report') return reply;
+      const token = crypto.randomUUID();
+      return updateUploadGrant(owner, signal, () => ({
+        grant: {owner, hash, token, expiresAt: Date.now() + 10 * 60000},
+        reply: {...reply, uploadToken: token}
+      }));
+    });
+  }
+  if (msg.confirmed !== true) return fail('upload_confirmation_required');
+  if (typeof msg.uploadToken !== 'string' || !msg.uploadToken) return fail('report_expired');
+  if (!PixelGuardVTAttachments.localBlobUrl(msg.blobUrl, chrome.runtime.getURL('')) ||
+      typeof msg.name !== 'string' || !msg.name.trim() || msg.name.length > 512 || /[\\/\x00-\x1f\x7f]/.test(msg.name)) {
+    return fail('unavailable');
+  }
+  return withVirusTotal(async (key, signal, charge) => {
+    const allowed = await updateUploadGrant(owner, signal, grant => {
+      if (grant?.token === msg.uploadToken && grant.hash === hash) return {reply: {ok: true}};
+      return {grant, reply: fail('report_expired')};
+    });
+    if (!allowed.ok) return allowed;
+    return PixelGuardVTAttachments.upload({hash, name: msg.name, blobUrl: msg.blobUrl}, key, signal, charge);
+  }, 120000);
 }
 
 async function updateBadge(tabId, { suspicious, externals, links, scanning = false }) {
@@ -231,7 +296,8 @@ async function openVirusTotal(sender) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup', 'pg:gmail:mailboxHint', 'pg:gmail:openVirusTotal'].includes(msg?.type)) return false;
+  if (!['pg:state', 'pg:panel', 'pg:badge', 'pg:settings', 'pg:lookup', 'pg:attachmentReport', 'pg:uploadAttachment',
+    'pg:gmail:mailboxHint', 'pg:gmail:openVirusTotal'].includes(msg?.type)) return false;
   const popupUrl = chrome.runtime.getURL('popup.html');
   const fromPopup = sender.url === popupUrl || (sender.url?.startsWith(popupUrl) &&
     /^#tab=(0|[1-9]\d{0,9})$/.test(sender.url.slice(popupUrl.length)));
@@ -258,6 +324,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   ready.then(async () => {
     if (msg.type === 'pg:settings') return settings(msg);
     if (msg.type === 'pg:lookup') return lookup(msg);
+    if (msg.type === 'pg:attachmentReport' || msg.type === 'pg:uploadAttachment') {
+      if ((sender.frameId && sender.frameId !== 0) || (sender.documentLifecycle && sender.documentLifecycle !== 'active')) {
+        return fail('unauthorized');
+      }
+      return attachmentAction(msg, sender);
+    }
     await writes;
     if (msg.type === 'pg:panel') return { ok: true, ...await panelPreferences() };
     return state();
@@ -271,6 +343,7 @@ chrome.permissions.onRemoved.addListener(removed => {
   serialize(async () => {
     await ready;
     await withConfig(async config => {
+      await chrome.storage.session.remove('vtUploadGrants');
       if (config.enabled) await storage.set({ vtConfig: { ...config, enabled: false } });
     });
   }).catch(() => {});

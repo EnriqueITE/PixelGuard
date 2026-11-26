@@ -75,6 +75,12 @@ summary { cursor: pointer; color: var(--accent); font-weight: 650; padding: 10px
 .url-option { padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; }
 .url-option:hover, .url-option[aria-selected=true] { background: var(--soft); color: var(--accent); }
 #file-fields button { justify-self: start; }
+#attachment-picker, #local-file, #attachment-digest, #upload-confirmation { display: grid; gap: 6px; min-width: 0; }
+#attachments { width: 100%; padding: 6px 8px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }
+#attachment-digest { margin-top: 4px; font-size: 12px; }
+#attachment-sha, #upload-file-name { overflow-wrap: anywhere; }
+#attachment-sha { user-select: all; }
+#upload-confirmation { padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); }
 #exact-url { margin: 0; padding: 9px; overflow: auto; max-height: 135px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, monospace; background: var(--soft); border-radius: 6px; }
 #result, #status { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
 #status[data-error="true"] { color: var(--danger); }

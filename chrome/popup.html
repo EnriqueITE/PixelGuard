@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="popup.css">
   <script defer src="virustotal/inventory.js"></script>
   <script defer src="popup-url.js"></script>
+  <script defer src="popup-attachments.js"></script>
   <script defer src="popup.js"></script>
 </head>
 <body>
@@ -69,16 +70,35 @@
               <button id="cancel-url" data-msg="vt_cancel"></button></div>
           </div>
           <div id="file-fields" hidden>
-            <label for="file" data-msg="pgLocalFile"></label>
-            <input type="file" id="file" aria-describedby="file-hint">
+            <div id="attachment-picker" hidden>
+              <label for="attachments" data-msg="pgAttachments"></label>
+              <select id="attachments"></select>
+            </div>
+            <div id="local-file">
+              <label for="file" data-msg="pgLocalFile"></label>
+              <input type="file" id="file" aria-describedby="file-hint">
+            </div>
             <p class="muted" id="file-hint" data-msg="pgFileHint"></p>
             <button id="query-hash" class="primary" data-msg="vt_queryHash" disabled></button>
+            <div id="attachment-digest" hidden>
+              <strong>SHA-256</strong>
+              <code id="attachment-sha" dir="ltr"></code>
+            </div>
           </div>
           <div id="result" role="status" hidden>
             <strong id="result-title"></strong>
             <p id="zero-note" class="muted" data-msg="vt_notSafe" hidden></p>
             <p id="result-time" class="muted"></p>
             <a id="report" target="_blank" rel="noopener noreferrer" data-msg="vt_openReport" hidden></a>
+          </div>
+          <div id="upload-confirmation" role="group" aria-labelledby="upload-heading" hidden>
+            <strong id="upload-heading" data-msg="pgUploadQuestion"></strong>
+            <div id="upload-file-name" dir="auto"></div>
+            <p class="muted" data-msg="pgUploadNotice"></p>
+            <div class="buttons">
+              <button type="button" id="cancel-upload" data-msg="vt_cancel"></button>
+              <button type="button" id="confirm-upload" class="primary" data-msg="pgConfirmUpload"></button>
+            </div>
           </div>
         </div>
       </details>

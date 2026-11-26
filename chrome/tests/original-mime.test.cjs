@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 require('../original-mime.js');
-const { html } = globalThis.PixelGuardOriginalMime;
+const { html, attachment } = globalThis.PixelGuardOriginalMime;
 
 const part = (headers, content) => headers + '\r\n\r\n' + content;
 function multipart(subtype, boundary, children, extra = '') {
@@ -72,4 +72,37 @@ test('recognizes a plain-text original without treating attachments or malformed
   const attached = part('Content-Type: text/plain\r\nContent-Disposition: attachment', 'Attached text');
   assert.throws(() => html(multipart('mixed', 'm', [attached])), { name: 'Error' });
   assert.throws(() => html('invalid headers\n\nresponse'), { name: 'Error' });
+});
+
+test('selects the exact MIME part for duplicate filenames and skips attached messages', () => {
+  const named = (name, bytes) => part('Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="' +
+    name + '"\r\nContent-Transfer-Encoding: base64', Buffer.from(bytes).toString('base64'));
+  const source = multipart('mixed', 'b', [part('Content-Type: text/plain', 'Hi'), named('same.bin', [0, 1]),
+    named('same.bin', [255, 0, 128]), part('Content-Type: message/rfc822', named('inner.bin', [9]))]);
+  assert.deepEqual([...attachment(source, {name: 'same.bin', partId: '0.2'}, 3)], [255, 0, 128]);
+  assert.throws(() => attachment(source, {name: 'same.bin'}, 3), /unavailable/);
+  assert.throws(() => attachment(source, {name: 'inner.bin', partId: '0.3'}, 3), /unavailable/);
+  assert.throws(() => attachment(source, {name: 'same.bin', partId: '0.2'}, 2), /too large/);
+  const continued = part('Content-Type: application/octet-stream\r\nContent-Disposition: attachment;' +
+    ' filename*0="sa"; filename*1="me.bin"\r\nContent-Transfer-Encoding: base64', 'Aw==');
+  const mixed = multipart('mixed', 'b', [part('Content-Type: text/plain', 'Hi'), named('same.bin', [2]), continued]);
+  assert.deepEqual([...attachment(mixed, {name: 'same.bin', partId: '0.2'}, 9)], [3]);
+  assert.throws(() => attachment(mixed, {name: 'same.bin', partId: '0.8'}, 9), /unavailable/);
+  const unique = multipart('mixed', 'b', [part('Content-Type: text/plain', 'Hi'), named('only.bin', [2]), continued]);
+  assert.throws(() => attachment(unique, {name: 'only.bin', partId: '0.2'}, 9), /unavailable/);
+});
+
+test('preserves binary line endings, zero bytes and encoded international filenames from the original', () => {
+  const bytes = '\x00\xff\r\nx\r\n';
+  const binary = part("Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename*0*=utf-8''caf%C3%A9;" +
+    "\r\n filename*1*=.bin\r\nContent-Transfer-Encoding: binary", bytes);
+  const quoted = part('Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="=?UTF-8?B?Y2Fmw6kudHh0?="\r\n' +
+    'Content-Transfer-Encoding: quoted-printable', '=FF=00=\r\n=01\r\nend');
+  const source = multipart('mixed', 'mix', [binary, quoted]);
+  const pick = (raw, name) => Buffer.from(attachment(raw, {name}, 50));
+  assert.deepEqual(pick(Buffer.from(source, 'latin1'), 'café.bin'), Buffer.from(bytes, 'latin1'));
+  assert.deepEqual(pick(Buffer.from(source, 'latin1'), 'café.txt'), Buffer.from('\xff\x00\x01\r\nend', 'latin1'));
+  assert.throws(() => pick(source.replaceAll('\r\n', '\n'), 'café.bin'), /Original bytes/);
+  assert.throws(() => pick(source.replaceAll('\r\n', '\n'), 'café.txt'), /Original bytes/);
+  assert.throws(() => attachment(source, {name: 'café.bin', duplicateName: true}, 50), /unavailable/);
 });

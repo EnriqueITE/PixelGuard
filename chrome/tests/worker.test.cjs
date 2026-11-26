@@ -11,6 +11,7 @@ const report = 'https://www.virustotal.com/ui/widget/html/stub';
 const clone = value => JSON.parse(JSON.stringify(value));
 function harness(shared = { data: {} }) {
   const data = shared.data;
+  const session = shared.session ??= {};
   const requests = [];
   const openedTabs = [];
   const openedPopups = [];
@@ -53,6 +54,10 @@ function harness(shared = { data: {} }) {
         Object.assign(data, clone(update));
       },
       async remove(key) { assert.equal(access, 'TRUSTED_CONTEXTS'); delete data[key]; }
+    }, session: {
+      async get(key) { return key in session ? {[key]: clone(session[key])} : {}; },
+      async set(update) { Object.assign(session, clone(update)); },
+      async remove(key) { delete session[key]; }
     } },
     tabs: {
       async get(id) { assert.equal(id, gmail.tab.id); return { ...gmail.tab, url: gmail.url, active: true }; },
@@ -67,9 +72,10 @@ function harness(shared = { data: {} }) {
     }, onRemoved: { addListener(fn) { revoked = fn; } } }
   };
   const context = vm.createContext({
-    chrome, URL, setTimeout, clearTimeout, AbortController, crypto: webcrypto, TextEncoder, TextDecoder, atob, btoa, navigator,
+    chrome, URL, Blob, FormData, setTimeout, clearTimeout, AbortController, crypto: webcrypto, TextEncoder, TextDecoder, atob, btoa, navigator,
     fetch: async (url, options) => {
       requests.push({ url, options });
+      if (shared.fetch) return shared.fetch(url, options);
       return { ok: true, status: 200, json: async () => ({ data: { url: report, detection_ratio: { detections: 1, total: 80 } } }) };
     },
     importScripts: (...names) => names.forEach(name => {
@@ -109,6 +115,138 @@ test('the Gmail page only receives panel visibility and theme, including when se
   assert.deepEqual(h.broadcasts, [1, 2].map(() => ({ type: 'pg:panelChanged', showPanel: false, theme: 'light' })));
   assert.deepEqual(await h.send('pg:state'), { ok: true, hasKey: true, vtEnabled: false, showPanel: false, theme: 'light' });
   assert.equal(h.requests.length, 0);
+});
+
+const sampleFile = new Blob(['Adjunto de prueba\n']);
+const sampleBlobUrl = 'blob:chrome-extension://sample/5c5bcfa9-8ddb-463e-8b87-c8bed46eeaf0';
+const filesApi = 'https://www.virustotal.com/api/v3/files';
+const miss = () => Response.json({error: {code: 'NotFoundError'}}, {status: 404});
+const accepted = () => Response.json({data: {type: 'analysis', id: 'sample-analysis'}});
+async function fileHash(file) {
+  return Buffer.from(await webcrypto.subtle.digest('SHA-256', await file.arrayBuffer())).toString('hex');
+}
+async function configuredAttachmentHarness(fetch) {
+  const shared = {data: {}, fetch};
+  const h = harness(shared);
+  h.grant();
+  assert.equal((await h.send('pg:settings', {vtEnabled: true, apiKey: sample})).ok, true);
+  return {h, shared};
+}
+
+test('file reports send only a SHA-256 from the trusted popup and distinguish verdicts, misses, and API errors', async () => {
+  const hash = await fileHash(sampleFile);
+  const hit = {data: {type: 'file', id: hash, attributes: {last_analysis_stats: {
+    malicious: 2, suspicious: 1, harmless: 20, undetected: 37, timeout: 4
+  }}}};
+  const cases = [
+    [() => Response.json(hit), 'reported'], [miss, 'no_report'],
+    [() => Response.json({...hit, data: {...hit.data, id: '0'.repeat(64)}}), 'invalid_response'],
+    [() => Response.json({error: {code: 'WrongCode'}}, {status: 404}), 'invalid_response'],
+    [() => new Response('Not Found', {status: 404}), 'invalid_response'],
+    [() => Response.json({}, {status: 401}), 'invalid_key'], [() => Response.json({}, {status: 403}), 'forbidden'],
+    [() => Response.json({}, {status: 429}), 'rate_limit'], [() => Response.json({}, {status: 500}), 'network']
+  ];
+  for (const [response, expected] of cases) {
+    const {h} = await configuredAttachmentHarness(response);
+    assert.equal((await h.send('pg:attachmentReport', {hash}, h.gmail)).error, 'unauthorized');
+    assert.equal((await h.send('pg:attachmentReport', {hash}, {...h.popup, documentLifecycle: 'cached'})).error, 'unauthorized');
+    assert.equal((await h.send('pg:attachmentReport', {hash: 'no-hash'})).error, 'unavailable');
+    const reply = await h.send('pg:attachmentReport', {hash: hash.toUpperCase(), name: 'private.pdf', blobUrl: sampleBlobUrl});
+    assert.equal(reply.result?.status || reply.error, expected);
+    assert.equal(!!reply.uploadToken, expected === 'no_report');
+    if (expected === 'reported') {
+      assert.equal(reply.result.detections, 3);
+      assert.equal(reply.result.total, 60);
+      assert.equal(reply.result.reportUrl, 'https://www.virustotal.com/gui/file/' + hash);
+    }
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].url, filesApi + '/' + hash);
+    const {method, body, credentials, redirect, headers} = h.requests[0].options;
+    assert.deepEqual([method, body, credentials, redirect, headers['x-apikey']], ['GET', undefined, 'omit', 'error', sample]);
+    assert.equal(JSON.stringify(headers).includes('private.pdf'), false);
+  }
+});
+
+test('a confirmed missing attachment can be uploaded only once by its popup, even across worker restarts', async () => {
+  const hash = await fileHash(sampleFile);
+  const {h, shared} = await configuredAttachmentHarness((url, options) => {
+    if (url === filesApi + '/' + hash) return miss();
+    if (url === sampleBlobUrl) return new Response(sampleFile);
+    if (url === filesApi && options.method === 'POST') return accepted();
+    throw Error('Unexpected request: ' + url);
+  });
+  const sender = {...h.popup, documentId: 'popup1'};
+  const {uploadToken} = await h.send('pg:attachmentReport', {hash}, sender);
+  const msg = {hash, name: 'prueba.txt', blobUrl: sampleBlobUrl, uploadToken, confirmed: true};
+  const reopened = harness(shared);
+  reopened.grant();
+  assert.equal((await reopened.send('pg:uploadAttachment', msg, h.gmail)).error, 'unauthorized');
+  assert.equal((await reopened.send('pg:uploadAttachment', {...msg, confirmed: false}, sender)).error, 'upload_confirmation_required');
+  assert.equal((await reopened.send('pg:uploadAttachment', msg, {...sender, documentId: 'popup2'})).error, 'report_expired');
+  assert.equal((await reopened.send('pg:uploadAttachment', {...msg, hash: '0'.repeat(64)}, sender)).error, 'report_expired');
+  for (const blobUrl of ['https://other.example/file', 'blob:https://mail.google.com/value', sampleBlobUrl + '?extra',
+    sampleBlobUrl.replace('sample/', 'sample.else/')]) {
+    assert.equal((await reopened.send('pg:uploadAttachment', {...msg, blobUrl}, sender)).error, 'unavailable');
+  }
+  assert.equal(reopened.requests.length, 0);
+  const [first, simultaneous] = await Promise.all([
+    reopened.send('pg:uploadAttachment', msg, sender), reopened.send('pg:uploadAttachment', msg, sender)
+  ]);
+  assert.deepEqual(first, {ok: true, analysisId: 'sample-analysis'});
+  assert.equal(simultaneous.error, 'busy');
+  assert.equal((await reopened.send('pg:uploadAttachment', msg, sender)).error, 'report_expired');
+  assert.deepEqual(reopened.requests.map(x => x.url), [sampleBlobUrl, filesApi]);
+  assert.equal(reopened.requests[0].options.headers, undefined);
+  const options = reopened.requests[1].options;
+  assert.deepEqual([options.method, options.credentials, options.redirect], ['POST', 'omit', 'error']);
+  assert.equal(options.body.get('file').name, 'prueba.txt');
+  assert.equal(await options.body.get('file').text(), await sampleFile.text());
+  assert.equal(shared.data.vtQuota.length, 2);
+});
+
+test('expired consent, changed bytes, disabled settings and revoked permissions prevent sending file contents', async () => {
+  const hash = await fileHash(sampleFile);
+  for (const reason of ['expired', 'bytes', 'disabled', 'permission', 'quota', 'oversize']) {
+    const {h, shared} = await configuredAttachmentHarness(url => url === sampleBlobUrl ?
+      new Response(new Blob(['other bytes']), {headers: {'content-length': reason === 'oversize' ? '53000000' : '11'}}) : miss());
+    const {uploadToken} = await h.send('pg:attachmentReport', {hash});
+    const msg = {hash, name: 'test.txt', uploadToken, confirmed: true, blobUrl: sampleBlobUrl};
+    if (reason === 'expired') shared.session.vtUploadGrants[0].expiresAt = Date.now() - 1;
+    if (reason === 'disabled') {
+      assert.equal((await h.send('pg:settings', {vtEnabled: false})).ok, true);
+      assert.equal((await h.send('pg:settings', {vtEnabled: true})).ok, true);
+    }
+    if (reason === 'permission') h.revoke();
+    if (reason === 'quota') {
+      shared.data.vtQuota = Array(4).fill(Date.now());
+      shared.fetch = () => new Response(sampleFile);
+    }
+    const reply = await h.send('pg:uploadAttachment', msg);
+    assert.equal(reply.error, {permission: 'disabled', quota: 'rate_limit', oversize: 'too_large'}[reason] || 'report_expired');
+    assert.equal(h.requests.some(r => r.options.method === 'POST'), false);
+  }
+});
+
+test('large attachments use an HTTPS single-use upload URL on the permitted host and charge both API requests', async () => {
+  const file = new Blob([new Uint8Array(32 * 1024 * 1024 + 1)]);
+  const hash = await fileHash(file);
+  const path = 'www.virustotal.com/_ah/upload/single-use/';
+  for (const valid of [true, false]) {
+    const {h} = await configuredAttachmentHarness(url => {
+      if (url === filesApi + '/' + hash) return miss();
+      if (url === sampleBlobUrl) return new Response(file);
+      if (url === filesApi + '/upload_url') return Response.json({data: valid ? 'http://' + path : 'https://elsewhere.example/_ah/upload/x'});
+      if (url === 'https://' + path) return accepted();
+      throw Error('Unexpected request: ' + url);
+    });
+    const {uploadToken} = await h.send('pg:attachmentReport', {hash});
+    const result = await h.send('pg:uploadAttachment', {hash, blobUrl: sampleBlobUrl, name: 'big.txt', uploadToken, confirmed: true});
+    assert.equal(valid ? result.analysisId : result.error, valid ? 'sample-analysis' : 'invalid_response');
+    assert.deepEqual(h.requests.map(r => r.url), [
+      filesApi + '/' + hash, sampleBlobUrl, filesApi + '/upload_url', ...(valid ? ['https://' + path] : [])
+    ]);
+    assert.equal(h.data.vtQuota.length, valid ? 3 : 2);
+  }
 });
 
 test('changing theme preserves other preferences and remains local across worker restarts', async () => {

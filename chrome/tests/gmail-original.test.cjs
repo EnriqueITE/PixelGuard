@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 function harness(location, fetch, anchors = [], runtime, implementation) {
   const document = { querySelectorAll: () => anchors, implementation };
-  const context = vm.createContext({ location, fetch, document, chrome: {runtime}, URL, Uint8Array, TextDecoder, atob });
+  const context = vm.createContext({ location, fetch, document, chrome: {runtime}, URL, URLSearchParams, Uint8Array, TextDecoder, atob });
   for (const file of ['original-mime.js', 'gmail-original.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
   }
@@ -239,4 +239,37 @@ test('does not request the original again after a size limit, cancellation, or u
   await assert.rejects(api.read(id), /too large/);
   assert.equal(cancelled, true);
   assert.equal(requests, 1);
+});
+
+test('reads only the selected native attachment, rejects partial or wrong files and never follows redirects', async () => {
+  const body = bodyWith({'data-legacy-message-id': id});
+  const target = {partId: '0.1', name: 'file.bin', limit: 32, hint: 'abcd1234'};
+  const file = Uint8Array.from([0, 255, 13, 10]);
+  const raw = 'Content-Type: multipart/mixed; boundary=eml\r\n\r\n--eml\r\nContent-Type: text/plain\r\n\r\ntext\r\n' +
+    '--eml\r\nContent-Disposition: attachment; filename="file.bin"\r\nContent-Transfer-Encoding: base64\r\n\r\nAP8NCg==\r\n--eml--\r\n';
+  for (const outcome of ['exact', 'wrong', 'partial', 'too_large', 'redirect']) {
+    const seen = [];
+    const api = harness(account, async (input, options) => {
+      const url = new URL(input);
+      assert.equal(url.origin + url.pathname, account.origin + account.pathname);
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.credentials, 'same-origin');
+      assert.equal(options.referrerPolicy, 'no-referrer');
+      const partId = url.searchParams.get('attid');
+      seen.push(partId);
+      if (partId === '0') return new Response(raw, {headers: {'content-type': 'message/rfc822'}});
+      assert.equal(url.searchParams.get('th'), id);
+      assert.equal(url.searchParams.get('ik'), 'abcd1234');
+      const name = outcome === 'wrong' ? 'sign-in.html' : target.name;
+      const headers = {'content-disposition': 'attachment; filename="' + name + '"'};
+      if (outcome === 'partial') headers['content-range'] = 'bytes 0-3/10';
+      if (outcome === 'too_large') headers['content-length'] = '33';
+      if (outcome === 'redirect') throw TypeError('Redirect disallowed');
+      return new Response(outcome === 'exact' ? file : 'bad', {headers});
+    });
+    const result = api.read(id, undefined, body, () => true, target);
+    if (outcome === 'too_large') await assert.rejects(result, /too large/);
+    else assert.deepEqual([...await result], [...file]);
+    assert.deepEqual(seen, ['exact', 'too_large'].includes(outcome) ? ['0.1'] : ['0.1', '0']);
+  }
 });

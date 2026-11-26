@@ -138,3 +138,18 @@
 .pixelguard-gmail .pg-pager { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--pg-line); padding: 6px 12px; }
 .pixelguard-gmail .pg-range { margin-inline-end: auto; color: var(--pg-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pixelguard-gmail [hidden] { display: none; }
+.pixelguard-attachment-action {
+  display: table;
+  margin: 3px 0;
+  padding: 3px 8px;
+  border: 1px solid #8fb8ac;
+  border-radius: 5px;
+  background: #f0f7f5;
+  color: #086953;
+  font: 600 12px/1.4 system-ui, sans-serif;
+  cursor: pointer;
+}
+.aZo + .pixelguard-attachment-action { display: inline-block; vertical-align: top; }
+.pixelguard-attachment-action[data-theme="dark"] { background: #213236; color: #76ddbb; border-color: #567d75; }
+.pixelguard-attachment-action:hover { text-decoration: underline; }
+.pixelguard-attachment-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

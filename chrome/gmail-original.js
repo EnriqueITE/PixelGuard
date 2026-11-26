@@ -50,7 +50,7 @@
     return '';
   }
 
-  async function readSource(url, signal, expectHtmlPage) {
+  async function readSource(url, signal, expectHtmlPage, limit = SOURCE_LIMIT, attachmentName) {
     const response = await fetch(url, {
       credentials: 'same-origin', mode: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer',
       cache: 'no-store', signal
@@ -62,15 +62,25 @@
     try {
       const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       const isHtmlPage = type === 'text/html' || type === 'application/xhtml+xml';
-      if (Number(response.headers.get('content-length')) > SOURCE_LIMIT) throw new RangeError('Original too large');
-      if (response.status !== 200 || isHtmlPage !== expectHtmlPage) {
+      if (response.status !== 200 || response.headers.has('content-range')) throw Error('Gmail original unavailable');
+      if (attachmentName !== undefined) {
+        const disposition = response.headers.get('content-disposition') || '';
+        const match = /;\s*filename="((?:\\.|[^"\\])*)"|;\s*filename=([^;\s"]+)/i.exec(disposition);
+        let filename = (match?.[1] ?? match?.[2] ?? '').replace(/\\(.)/g, '$1');
+        const encoded = /;\s*filename\*=utf-8'[^']*'([^;\s]+)/i.exec(disposition);
+        if (encoded) filename = decodeURIComponent(encoded[1]);
+        if (!/^attachment(?:\s*;|$)/i.test(disposition) || filename !== attachmentName) {
+          throw Error('Gmail attachment unavailable');
+        }
+      } else if (isHtmlPage !== expectHtmlPage) {
         throw Error('Gmail original unavailable');
       }
+      if (Number(response.headers.get('content-length')) > limit) throw new RangeError('Original too large');
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
         length += value.length;
-        if (length > SOURCE_LIMIT) throw new RangeError('Original too large');
+        if (length > limit) throw new RangeError('Original too large');
         chunks.push(value);
       }
     } catch (error) {
@@ -88,7 +98,7 @@
     return source;
   }
 
-  async function read(id, signal, body, contextActive) {
+  async function read(id, signal, body, contextActive, attachment) {
     const account = accountPath(location);
     if (!account || typeof id !== 'string' || !(HEX_ID.test(id) || PERM_ID.test(id))) throw Error('Invalid Gmail message');
     const wrapper = body?.parentElement?.closest(MESSAGE_WRAPPER);
@@ -101,26 +111,41 @@
           permanentId(body.parentElement?.closest(MESSAGE_WRAPPER)) !== nativeId))) throw Error('Gmail message changed');
     }
     checkCurrent();
-    let hint = sourceLinkHint(account, id, permId);
+    const base = location.origin + account + '/?';
+    // Reconstruct only known Gmail parameters. Download links can otherwise redirect
+    // to a different origin; the source reader rejects every redirect before following it.
+    if (attachment && /^0(?:\.\d{1,4}){1,16}$/.test(attachment.partId)) {
+      const query = new URLSearchParams({view: 'att', attid: attachment.partId, disp: 'attd', safe: '1'});
+      query.set(hasLegacy ? 'th' : 'permmsgid', hasLegacy ? id : permId);
+      if (MAILBOX_HINT.test(attachment.hint || '')) query.set('ik', attachment.hint);
+      try {
+        const bytes = await readSource(base + query, signal, false, attachment.limit, attachment.name);
+        checkCurrent();
+        return bytes;
+      } catch (error) {
+        if (signal?.aborted || error instanceof RangeError) throw error;
+      }
+    }
+    let hint = attachment?.hint && MAILBOX_HINT.test(attachment.hint) ? attachment.hint : sourceLinkHint(account, id, permId);
     if (!hint) {
       try {
         const reply = await globalThis.chrome?.runtime?.sendMessage({type: 'pg:gmail:mailboxHint'});
         if (reply?.ok && typeof reply.hint === 'string' && MAILBOX_HINT.test(reply.hint)) hint = reply.hint;
       } catch { /* The same-account, hint-free download still works for some messages. */ }
     }
-    const base = location.origin + account + '/?';
     const suffix = hint ? '&ik=' + hint : '';
     const view = base + 'view=om&permmsgid=' + permId + suffix;
     const download = param => base + 'view=att&' + param + '&attid=0&disp=comp&safe=1&zw' + suffix;
     const preferred = download(nativeId || !hasLegacy ? 'permmsgid=' + permId : 'th=' + id);
-    const routes = hint ? [view, preferred] : [preferred, view];
+    const routes = hint && !attachment ? [view, preferred] : [preferred, view];
     // Some Gmail views accept only the legacy message ID when downloading.
     if (nativeId && hasLegacy) routes.push(download('th=' + id));
     for (const url of routes) {
       checkCurrent();
       let source;
       try {
-        source = await readSource(url, signal, url === view);
+        // A 50 MiB base64 file with MIME line breaks fits in this on-demand source budget.
+        source = await readSource(url, signal, url === view, attachment ? 80 * 1024 * 1024 : SOURCE_LIMIT);
         if (url === view) {
           // Keep the entire Gmail page inert. Only its escaped source text enters the MIME reader.
           const template = document.implementation.createHTMLDocument('').createElement('template');
@@ -128,6 +153,10 @@
           const raw = template.content.querySelectorAll('pre.raw_message_text');
           if (raw.length !== 1) throw Error('Gmail original unavailable');
           source = raw[0].textContent;
+        }
+        if (attachment) {
+          checkCurrent();
+          return PixelGuardOriginalMime.attachment(source, attachment, attachment.limit);
         }
       } catch (error) {
         if (url === routes[routes.length - 1] || signal?.aborted || error.name === 'AbortError' || error instanceof RangeError) throw error;

@@ -22,7 +22,7 @@ PixelGuard lee el HTML original en memoria para detectar también los píxeles c
 
 Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si Gmail no entrega el original, la barra conserva los hallazgos y muestra **Análisis parcial**. El botón **Reintentar análisis** permite volver a pedirlo desde el mismo correo.
 
-El análisis admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
+El análisis automático de seguimiento admite originales de hasta 8 MiB con un cuerpo HTML de hasta 2 MiB. Examina el cuerpo del correo y excluye adjuntos y mensajes reenviados como archivo. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
 
 El detector se activa en `https://mail.google.com/mail/*`. El análisis del mensaje es local y respeta la elección de imágenes de Gmail. El [detector de Gmail](scanner.js) parte del de Thunderbird y reconoce las direcciones del proxy de imágenes de Gmail. La compilación reutiliza los iconos de PixelGuard, las traducciones de los indicios y las funciones de inventario de enlaces que ya están en la raíz.
 
@@ -38,6 +38,12 @@ PixelGuard cifra la clave de API localmente con AES-GCM. La clave de cifrado de 
 
 Con VirusTotal activado, elige un enlace del hilo abierto o pega una URL en el mismo campo. Las direcciones largas terminan en «…» cuando no caben. Deja el puntero un instante sobre un enlace de la lista o sobre la URL elegida para verla en el recuadro del navegador junto al puntero. **Revisar URL completa** abre la dirección entera para leerla a tu ritmo antes de confirmar su envío. También puedes consultar solo el dominio o seleccionar un archivo de hasta 50 MiB para consultar su SHA-256. El cálculo se realiza en tu equipo y solo se envía la huella. El popup permite estas consultas incluso si ocultas el panel de los correos. Cada consulta consume la cuota de tu clave.
 
+### Adjuntos de Gmail
+
+Pulsa **VirusTotal** junto a un adjunto para consultar su informe. También puedes elegirlo en el selector de adjuntos del widget y pulsar **Consultar huella**. PixelGuard obtiene el archivo de Gmail, calcula su SHA-256 en tu equipo y envía esa huella a VirusTotal. El widget muestra la huella y el informe disponible. El límite por adjunto es de 50 MiB.
+
+Si VirusTotal confirma que desconoce la huella, el widget te ofrece subir ese archivo. Puedes cancelar o confirmar el envío. Al confirmar, compartes el contenido y el nombre del archivo con VirusTotal para que lo analice. Si la consulta falla, puedes reintentarla.
+
 ## Repetir las pruebas
 
 Los [tres mensajes sintéticos](tests/mail) contienen un píxel de 1 × 1 con identificador, un enlace de campaña y un logotipo visible. Sus dominios de prueba no reciben tráfico. La prueba instala la compilación en Chrome for Testing con un perfil temporal e intercepta la navegación antes de que llegue a Gmail. Simula el cuerpo del mensaje, el proxy, un hilo que se contrae y vuelve a expandirse y un borrador. Comprueba los textos que ve el usuario.
@@ -46,12 +52,13 @@ Con Node, `playwright-core` y su navegador Chromium instalados, ejecuta desde la
 
 ```sh
 python chrome/build.py
-node --test chrome/tests/scanner.test.cjs chrome/tests/worker.test.cjs
+node --test chrome/tests/*.test.cjs
 node chrome/tests/smoke.cjs
 node chrome/tests/original-smoke.cjs
 node chrome/tests/context-reload-smoke.cjs
 node chrome/tests/popup-smoke.cjs
 node chrome/tests/row-vt-smoke.cjs
+node chrome/tests/attachment-smoke.cjs
 ```
 
 Puedes indicar el ejecutable de Chrome for Testing mediante `CHROME_FOR_TESTING`. Para contrastar el resultado con Gmail real, abre los mensajes elegidos en el buzón de prueba con la extensión cargada. Anota por separado el resumen y los indicios que aparecen al desplegarlo.
