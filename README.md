@@ -2,22 +2,26 @@
   <img src="site/assets/sobre.webp" width="420" alt="A magnifying glass reveals individual pixels on a blue envelope.">
 </p>
 
-<h1 align="center">PixelGuard for Thunderbird</h1>
+<h1 align="center">PixelGuard</h1>
 
 <p align="center">See which images and links in an email could track you.</p>
 
 <p align="center">
-  <a href="https://addons.thunderbird.net/thunderbird/addon/pixelguard/"><strong>Install for Thunderbird</strong></a> ·
-  <a href="store-screenshots/0.2.0/en/01-tracking-overview.png">See the panel</a>
+  <a href="https://addons.thunderbird.net/thunderbird/addon/pixelguard/"><img src="site/assets/thunderbird.png" width="28" height="28" align="absmiddle" alt=""> <strong>Thunderbird Add-ons</strong></a> &nbsp; &nbsp;
+  <a href="https://chromewebstore.google.com/detail/pixelguard-for-gmail/kmlhflloidpenjaopofpmahnjaaenifl"><img src="site/assets/chrome.png" width="28" height="28" align="absmiddle" alt=""> <strong>Chrome Web Store</strong></a>
 </p>
 
 PixelGuard checks each message locally and explains why it flagged an image or link. You choose whether to load remote content in Thunderbird. You can also look up a link or attachment manually with VirusTotal.
 
 ## Installation
+
+- **Gmail in Chrome or Brave** — Install [PixelGuard for Gmail from the Chrome Web Store](https://chromewebstore.google.com/detail/pixelguard-for-gmail/kmlhflloidpenjaopofpmahnjaaenifl).
 - Install PixelGuard from its [official Thunderbird Add-ons page](https://addons.thunderbird.net/thunderbird/addon/pixelguard/). The store version may differ from the source version in this repository. GitHub hosts source and documentation; packaged XPI downloads are distributed through the official store.
 - Contributors can clone this repository, build from source, and load the extension temporarily in Thunderbird for testing.
 
-## What It Does
+[View the Thunderbird panel](store-screenshots/0.2.0/en/01-tracking-overview.png)
+
+## What It Does in Thunderbird
 - Scans the displayed message HTML to spot 1x1/hidden images, suspicious tracking parameters, and externally hosted assets that may leak engagement.
 - Uses confidence-based classification so normal visible images with marketing parameters are not automatically called tracking pixels.
 - Open the PixelGuard panel to see the findings and the reason for each one. The toolbar badge updates when you open a message.
