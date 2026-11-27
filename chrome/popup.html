@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PixelGuard</title>
+  <link rel="stylesheet" href="popup.css">
+  <script defer src="i18n-catalogs.js"></script>
+  <script defer src="i18n.js"></script>
+  <script defer src="virustotal/inventory.js"></script>
+  <script defer src="popup-url.js"></script>
+  <script defer src="popup-attachments.js"></script>
+  <script defer src="popup.js"></script>
+</head>
+<body>
+  <header><img src="assets/toolbar-32.png" width="32" height="32" alt=""><h1>PixelGuard</h1><span>Gmail</span></header>
+  <main>
+    <div class="setting">
+      <label for="panel-toggle" data-msg="pgShowBar"></label>
+      <input id="panel-toggle" class="switch" type="checkbox" role="switch" disabled>
+    </div>
+    <div class="setting appearance">
+      <label for="dark-mode" data-msg="pgDarkMode"></label>
+      <input id="dark-mode" class="switch" type="checkbox" role="switch" disabled>
+    </div>
+    <div class="setting appearance">
+      <label for="language" data-msg="pgLanguage"></label>
+      <select id="language" disabled>
+        <option value="auto" data-msg="pgBrowserLanguage"></option>
+      </select>
+    </div>
+    <section aria-labelledby="vt-title">
+      <div class="setting">
+        <div><h2 id="vt-title">VirusTotal</h2><div class="muted" data-msg="pgVtHint"></div></div>
+        <button id="setup" type="button" data-msg="pgConfigure" hidden></button>
+        <input id="vt-toggle" class="switch" type="checkbox" role="switch" aria-labelledby="vt-title" hidden disabled>
+      </div>
+      <div id="key-bar" hidden><span class="muted" data-msg="vt_keySaved"></span><button id="manage" class="text-btn" data-msg="pgManage"></button></div>
+      <form id="key-form" hidden>
+        <label for="key" data-msg="vt_keyLabel"></label>
+        <input id="key" type="password" autocomplete="off" spellcheck="false" minlength="16" maxlength="256" required>
+        <p class="muted" data-msg="pgKeyPrivacy"></p>
+        <div class="links"><a href="https://www.virustotal.com/gui/join-us" target="_blank" rel="noopener noreferrer" data-msg="vt_getKey"></a>
+          <a href="https://docs.virustotal.com/reference/public-vs-premium-api" target="_blank" rel="noopener noreferrer" data-msg="vt_apiTerms"></a></div>
+        <div class="buttons"><button class="primary" id="save-key" type="submit" data-msg="pgSaveKey"></button>
+          <button id="cancel-key" type="button" data-msg="vt_cancel"></button></div>
+        <button id="delete-key" type="button" class="text-btn danger" data-msg="vt_delete" hidden></button>
+      </form>
+      <div id="lookup" class="work" hidden>
+        <div id="link-fields">
+          <label id="url-label" for="url" data-msg="pgLinkAddress"></label>
+          <div id="url-picker">
+            <div id="url-control">
+              <input id="url" type="text" inputmode="url" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="url-options"
+                     dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="16384">
+              <span id="picked-url" dir="ltr" aria-hidden="true" hidden></span>
+              <button id="show-links" type="button" tabindex="-1" aria-haspopup="listbox" aria-controls="url-options" hidden></button>
+            </div>
+            <div id="url-options" role="listbox" aria-labelledby="url-label" dir="ltr" hidden></div>
+          </div>
+          <p class="muted" id="truncated" data-msg="vt_truncated" hidden></p>
+          <div class="buttons">
+            <button id="query-domain" class="primary" disabled data-msg="vt_queryDomain"></button>
+            <button id="preview-url" disabled data-msg="pgReviewUrl"></button>
+          </div>
+        </div>
+        <div id="confirmation" hidden>
+          <strong data-msg="pgShareTitle"></strong>
+          <pre id="exact-url" dir="ltr" tabindex="0"></pre>
+          <p class="muted" data-msg="pgUrlNotice"></p>
+          <div class="buttons"><button id="confirm-url" class="primary" data-msg="vt_confirmUrl"></button>
+            <button id="cancel-url" data-msg="vt_cancel"></button></div>
+        </div>
+        <div id="file-fields">
+          <div id="attachment-picker">
+            <label for="attachments" data-msg="pgAttachments"></label>
+            <select id="attachments" disabled aria-busy="true" aria-describedby="file-hint">
+              <option value="" data-msg="pgLoadingAttachments"></option>
+            </select>
+          </div>
+          <input type="file" id="file" hidden>
+          <output id="local-filename" dir="auto" hidden></output>
+          <div class="buttons">
+            <button id="query-hash" class="primary" data-msg="vt_queryHash" disabled></button>
+            <button type="button" class="text-btn" id="choose-local-file" data-msg="pgPickLocalFile"></button>
+          </div>
+          <p class="muted" id="file-hint" data-msg="pgFileHint"></p>
+          <div id="attachment-digest" hidden>
+            <strong>SHA-256</strong>
+            <code id="attachment-sha" dir="ltr"></code>
+          </div>
+        </div>
+        <div id="result" role="status" hidden>
+          <strong id="result-title"></strong>
+          <p id="zero-note" class="muted" data-msg="vt_notSafe" hidden></p>
+          <p id="result-time" class="muted"></p>
+          <a id="report" target="_blank" rel="noopener noreferrer" data-msg="vt_openReport" hidden></a>
+        </div>
+        <div id="upload-confirmation" role="group" aria-labelledby="upload-heading" hidden>
+          <strong id="upload-heading" data-msg="pgUploadQuestion"></strong>
+          <div id="upload-file-name" dir="auto"></div>
+          <p class="muted" data-msg="pgUploadNotice"></p>
+          <div class="buttons">
+            <button type="button" id="cancel-upload" data-msg="vt_cancel"></button>
+            <button type="button" id="confirm-upload" class="primary" data-msg="pgConfirmUpload"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <p id="status" role="status" hidden></p>
+  </main>
+  <footer>
+    <a href="https://buymeacoffee.com/enriqueite" target="_blank" rel="noopener noreferrer" data-msg="ui_buyCoffee">Buy me a coffee</a>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_gmailExtensionName__",
+  "description": "__MSG_gmailDescription__",
+  "version": "0.1.0",
+  "default_locale": "en",
+  "homepage_url": "https://github.com/EnriqueITE/PixelGuard",
+  "author": "Enrique Serrano Aparicio",
+  "minimum_chrome_version": "102",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["https://mail.google.com/*"],
+  "optional_host_permissions": ["https://www.virustotal.com/*"],
+  "background": { "service_worker": "worker.js" },
+  "icons": { "48": "assets/icon-48.png", "96": "assets/icon-96.png", "128": "assets/icon-128.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/toolbar-16.png",
+      "24": "assets/toolbar-24.png",
+      "32": "assets/toolbar-32.png"
+    }
+  },
+  "content_scripts": [{
+    "matches": ["https://mail.google.com/mail/*"],
+    "js": ["i18n-catalogs.js", "i18n.js", "scanner.js", "virustotal/inventory.js", "original-mime.js", "original-scan.js", "gmail-original.js", "gmail-attachments.js", "gmail.js"],
+    "css": ["gmail.css"]
+  }],
+  "web_accessible_resources": [{
+    "resources": ["assets/icon-48.png"],
+    "matches": ["https://mail.google.com/*"]
+  }]
+}

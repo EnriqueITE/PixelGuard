@@ -1,0 +1,71 @@
+# PixelGuard para Gmail
+
+Prototipo de PixelGuard para Gmail en Chrome y Brave de escritorio. Su código, manifiesto, versión y pruebas están en `chrome/`. La extensión de Thunderbird sigue en la raíz del mismo repositorio.
+
+Al expandir un mensaje en Gmail, PixelGuard añade un resumen encima del cuerpo. Despliega el resumen para ver el texto del enlace, su dirección completa y el motivo de la detección. Puedes copiar cada URL y recorrer los resultados de tres en tres.
+
+PixelGuard usa el idioma del navegador de forma predeterminada. En los ajustes del popup, **Idioma** permite elegir inglés, alemán, griego, español, francés, italiano, ruso o chino simplificado. El cambio se aplica también a los mensajes abiertos y al widget de VirusTotal. Elige **Idioma del navegador** para volver al modo automático. Si el idioma del navegador no está disponible, PixelGuard usa inglés.
+
+## Cargar en Chrome
+
+1. Clona el repositorio completo y, desde la raíz, ejecuta `python chrome/build.py`.
+2. Abre `chrome://extensions` o `brave://extensions`, activa **Modo de desarrollador**, pulsa **Cargar descomprimida** y selecciona `dist/chrome-gmail`.
+3. Abre un mensaje en Gmail. Si ya tienes el buzón abierto, PixelGuard se conecta a esa pestaña. Tras modificar el código, repite la compilación y recarga la extensión.
+
+## Qué puede observar
+
+El escudo muestra tres posiciones, igual que en Thunderbird. La primera suma los posibles píxeles de seguimiento y las imágenes sospechosas. La segunda cuenta las imágenes externas ordinarias y la tercera, los enlaces con indicios de seguimiento. Cada posición muestra `+` a partir de diez. Un correo con un posible píxel, 24 imágenes externas y 25 enlaces con indicios muestra `1++` en rojo. Al pasar el puntero por el escudo aparecen las tres cifras completas. El contador suma los mensajes expandidos de esa pestaña, incluso con la barra oculta. Al volver a la bandeja desaparece.
+
+El escudo y la barra toman el color del indicio de mayor prioridad. Un posible píxel o una imagen sospechosa tiene prioridad roja. Le siguen los enlaces con indicios de seguimiento en naranja y las imágenes externas en turquesa. Puedes desplegar el panel y filtrar por tipo. Cada fila lleva su propia etiqueta y color.
+
+Al abrir o expandir un mensaje en la pestaña visible, PixelGuard inicia el análisis completo. Usa la cuenta y el identificador del mensaje para pedir el original a Gmail. Durante la lectura, la barra muestra **Analizando el mensaje** y el escudo muestra **…**. Una línea recorre la barra mientras dura el análisis. Si has activado la preferencia de movimiento reducido, la línea permanece quieta. El análisis también funciona con la barra oculta.
+
+PixelGuard lee el original en memoria para detectar también los píxeles cuya dirección falta en la vista de Gmail. Examina las direcciones como texto, sin abrir enlaces ni cargar imágenes. Puedes mantener las imágenes bloqueadas. El panel y el escudo combinan los hallazgos del original con los de la vista de Gmail. Cada imagen conserva su clasificación de mayor prioridad.
+
+Al desplegar la barra, puedes filtrar los hallazgos desde el selector **Todos los resultados** de la izquierda. Si PixelGuard solo ha podido examinar parte del mensaje, la barra conserva los hallazgos y muestra **Análisis parcial**. Pasa el puntero por el icono de información o enfócalo con el teclado para saber qué ha quedado sin comprobar. Si falla la lectura del original, puedes volver a pedirlo con **Reintentar análisis**.
+
+El análisis automático admite originales de hasta 8 MiB y revisa hasta 2 MiB de contenido entre las partes de texto y HTML. En un correo con varias partes en línea, examina cada una y elige la versión preferida cuando son alternativas del mismo contenido. Excluye los adjuntos y los mensajes reenviados como archivo. Si alcanza un límite de análisis, la barra indica **Análisis parcial**. Una alerta indica que el mensaje contiene elementos compatibles con seguimiento. El remitente podría registrar la apertura si algún cliente carga la imagen.
+
+El detector se activa en `https://mail.google.com/mail/*`. El análisis del mensaje es local y respeta la elección de imágenes de Gmail. El [detector de Gmail](scanner.js) reconoce las direcciones del proxy de imágenes de Gmail. La compilación reutiliza los iconos de PixelGuard y las traducciones de los indicios que están en la raíz.
+
+## Ajustes y VirusTotal
+
+Pulsa el escudo de la barra de herramientas para mostrar u ocultar el panel y activar **Modo oscuro**. El tema claro es el predeterminado. El interruptor cambia al instante el aspecto de los ajustes y del panel de los correos abiertos. La elección se guarda en el navegador.
+
+Al activar VirusTotal, aparece el botón **VirusTotal** junto a **Copiar URL** en cada hallazgo con una dirección web compatible. Púlsalo para abrir el widget con esa dirección seleccionada. Funciona también con la dirección de un píxel o de una imagen que PixelGuard ha encontrado en el original. Puedes cambiar la selección, elegir **Consultar dominio** o pulsar **Revisar URL completa**. La consulta de la URL se envía cuando la confirmas.
+
+En **VirusTotal → Configurar**, introduce tu clave de API y pulsa **Guardar clave**. Las consultas están desactivadas inicialmente. Para habilitarlas, usa el interruptor de VirusTotal y concede el permiso de acceso.
+
+Para saber qué se queda en tu navegador y qué recibe VirusTotal con cada acción, consulta el [aviso de privacidad de PixelGuard para Gmail](PRIVACY.md).
+
+PixelGuard cifra la clave de API localmente con AES-GCM. La clave de cifrado de Web Crypto es no exportable y se conserva en IndexedDB, en el origen privado de la extensión. El navegador no sincroniza estas claves. Alguien que controle tu sesión de Windows o el perfil del navegador aún podría usar la integración. En **Gestionar clave**, **Eliminar clave y desactivar** borra la clave de API guardada y desactiva las consultas.
+
+Con VirusTotal activado, elige un enlace del hilo abierto o pega una URL en el mismo campo. Las direcciones largas terminan en «…» cuando no caben. Deja el puntero un instante sobre un enlace de la lista o sobre la URL elegida para verla en el recuadro del navegador junto al puntero. **Revisar URL completa** abre la dirección entera para leerla a tu ritmo antes de confirmar su envío. También puedes consultar solo el dominio o seleccionar un archivo de hasta 50 MiB para consultar su SHA-256. El cálculo se realiza en tu equipo y solo se envía la huella. El popup permite estas consultas incluso si ocultas el panel de los correos. Cada consulta consume la cuota de tu clave.
+
+### Adjuntos de Gmail
+
+Con VirusTotal activado, abre el escudo de PixelGuard y elige el archivo en **Adjuntos del correo abierto**, debajo del campo de enlaces. También puedes pulsar **VirusTotal** junto al adjunto en Gmail para abrir el widget con ese archivo seleccionado. En ambos casos, pulsa **Consultar huella** para iniciar la consulta. Si abres otro correo sin adjuntos, el desplegable lo indica.
+
+Al consultar, PixelGuard obtiene el archivo de Gmail, calcula su SHA-256 en tu equipo y envía esa huella a VirusTotal. El widget muestra la huella y el informe disponible. El límite por adjunto es de 50 MiB.
+
+Si VirusTotal confirma que desconoce la huella, el widget te ofrece subir ese archivo. Puedes cancelar o confirmar el envío. Al confirmar, compartes el contenido y el nombre del archivo con VirusTotal para que lo analice. Si la consulta falla, puedes reintentarla.
+
+## Repetir las pruebas
+
+Los [tres mensajes sintéticos](tests/mail) contienen un píxel de 1 × 1 con identificador, un enlace de campaña y un logotipo visible. Sus dominios de prueba no reciben tráfico. La prueba instala la compilación en Chrome for Testing con un perfil temporal e intercepta la navegación antes de que llegue a Gmail. Simula el cuerpo del mensaje, el proxy, un hilo que se contrae y vuelve a expandirse y un borrador. Comprueba los textos que ve el usuario.
+
+Con Node, `playwright-core` y su navegador Chromium instalados, ejecuta desde la raíz:
+
+```sh
+python chrome/build.py
+node --test chrome/tests/*.test.cjs
+node chrome/tests/smoke.cjs
+node chrome/tests/original-smoke.cjs
+node chrome/tests/context-reload-smoke.cjs
+node chrome/tests/popup-smoke.cjs
+node chrome/tests/language-smoke.cjs
+node chrome/tests/row-vt-smoke.cjs
+node chrome/tests/attachment-smoke.cjs
+```
+
+Puedes indicar el ejecutable de Chrome for Testing mediante `CHROME_FOR_TESTING`. Para contrastar el resultado con Gmail real, abre los mensajes elegidos en el buzón de prueba con la extensión cargada. Anota por separado el resumen y los indicios que aparecen al desplegarlo.

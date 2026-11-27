@@ -1,0 +1,9 @@
+From: PixelGuard Lab <lab@example.test>
+To: Test inbox <inbox@example.test>
+Subject: PixelGuard C - Ordinary logo
+Message-ID: <pixelguard-gmail-c@example.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=UTF-8
+
+<p>Thank you for your order.</p>
+<img src="https://cdn.example.test/brand/logo.png" width="180" height="48" alt="Example shop">

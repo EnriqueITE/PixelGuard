@@ -1,0 +1,8 @@
+From: PixelGuard Lab <lab@example.test>
+To: Test inbox <inbox@example.test>
+Subject: PixelGuard B - Campaign link
+Message-ID: <pixelguard-gmail-b@example.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=UTF-8
+
+<p>Read the <a href="https://click.example.test/redirect?utm_campaign=demo">November newsletter</a>.</p>
