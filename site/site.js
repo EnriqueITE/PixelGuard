@@ -40,21 +40,25 @@ function browserLanguage() {
   return "en";
 }
 
+let preferredLanguage = null;
+
 function applyLanguage() {
-  const language = languageSelect.value === "auto" ? browserLanguage() : languageSelect.value;
+  const language = preferredLanguage ?? browserLanguage();
+  languageSelect.value = language;
   document.documentElement.lang = language;
   for (const [node, key, property] of bindings) node[property] = translations[language][key];
 }
 
 try {
   const stored = localStorage.getItem(preferenceKey);
-  if (Object.hasOwn(translations, stored)) languageSelect.value = stored;
+  if (Object.hasOwn(translations, stored)) preferredLanguage = stored;
 } catch { /* Keep automatic selection when storage is unavailable. */ }
 languageSelect.addEventListener("change", () => {
+  preferredLanguage = languageSelect.value === "auto" ? null : languageSelect.value;
   applyLanguage();
   try {
-    if (languageSelect.value === "auto") localStorage.removeItem(preferenceKey);
-    else localStorage.setItem(preferenceKey, languageSelect.value);
+    if (preferredLanguage === null) localStorage.removeItem(preferenceKey);
+    else localStorage.setItem(preferenceKey, preferredLanguage);
   } catch { /* The choice still applies to this page. */ }
 });
 window.addEventListener("languagechange", applyLanguage);
